@@ -1,0 +1,299 @@
+services:
+  # ── Data Stores ──────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: linkforge_postgres
+    environment:
+      POSTGRES_USER: linkforge_user
+      POSTGRES_PASSWORD: linkforge_password
+      POSTGRES_DB: linkforge_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U linkforge_user -d linkforge_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mongodb:
+    image: mongo:7.0
+    container_name: linkforge_mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: adminpassword
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    container_name: linkforge_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # ── Event Bus ────────────────────────────────────────────
+  kafka:
+    image: bitnami/kafka:3.7.0
+    container_name: linkforge_kafka
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,EXTERNAL://:29092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+
+  # ── Observability ────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: linkforge_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus-config.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: linkforge_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+    depends_on:
+      - prometheus
+      - loki
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: linkforge_jaeger
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+      - "6831:6831/udp"
+      - "14269:14269"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: linkforge_loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yml:/etc/loki/local-config.yaml
+      - loki_data:/tmp/loki
+    command: -config.file=/etc/loki/local-config.yaml
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: linkforge_redis_exporter
+    ports:
+      - "9121:9121"
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    depends_on:
+      - redis
+
+  # ── Admin UIs ────────────────────────────────────────────
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: linkforge_kafka_ui
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local-kraft
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+      - DYNAMIC_CONFIG_ENABLED=true
+
+  schema-registry:
+    image: aivenhq/karapace:latest
+    container_name: linkforge_schema_registry
+    ports:
+      - "8081:8081"
+    environment:
+      - KARAPACE_ADVERTISED_URI=http://schema-registry:8081
+      - KARAPACE_BOOTSTRAP_URI=kafka:9092
+      - KARAPACE_PORT=8081
+      - KARAPACE_HOST=0.0.0.0
+      - KARAPACE_CLIENT_ID=karapace
+      - KARAPACE_GROUP_ID=karapace-registry
+      - KARAPACE_MASTER_ELIGIBILITY=true
+      - KARAPACE_TOPIC_NAME=_schemas
+      - KARAPACE_LOG_LEVEL=WARNING
+    depends_on:
+      - kafka
+
+  # ── Application ──────────────────────────────────────────
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: linkforge_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://linkforge_user:linkforge_password@postgres:5432/linkforge_db
+      - REDIS_URL=redis://redis:6379
+      - MONGODB_URI=mongodb://admin:adminpassword@mongodb:27017
+      - MONGODB_DB=linkforge_analytics
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - JAEGER_ENABLED=true
+      - JAEGER_HOST=jaeger
+      - PROMETHEUS_ENABLED=true
+      - FRONTEND_URL=http://localhost:3001
+      - ENVIRONMENT=development
+    depends_on:
+      postgres:
+        condition: service_started
+      redis:
+        condition: service_started
+      mongodb:
+        condition: service_started
+      kafka:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: linkforge_frontend
+    ports:
+      - "3001:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+  # ── Workers ──────────────────────────────────────────────
+  expiry-worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: linkforge_expiry_worker
+    command: python -m src.workers.expiry_worker
+    environment:
+      - DATABASE_URL=postgresql://linkforge_user:linkforge_password@postgres:5432/linkforge_db
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - JAEGER_ENABLED=false
+      - PROMETHEUS_ENABLED=false
+      - ENVIRONMENT=development
+    depends_on:
+      - postgres
+      - redis
+
+  cleanup-worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: linkforge_cleanup_worker
+    command: python -m src.workers.cleanup_worker
+    environment:
+      - DATABASE_URL=postgresql://linkforge_user:linkforge_password@postgres:5432/linkforge_db
+      - MONGODB_URI=mongodb://admin:adminpassword@mongodb:27017
+      - MONGODB_DB=linkforge_analytics
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - JAEGER_ENABLED=false
+      - PROMETHEUS_ENABLED=false
+      - ENVIRONMENT=development
+    depends_on:
+      - postgres
+      - mongodb
+
+  aggregation-worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: linkforge_aggregation_worker
+    command: python -m src.workers.aggregation_worker
+    environment:
+      - DATABASE_URL=postgresql://linkforge_user:linkforge_password@postgres:5432/linkforge_db
+      - MONGODB_URI=mongodb://admin:adminpassword@mongodb:27017
+      - MONGODB_DB=linkforge_analytics
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - JAEGER_ENABLED=false
+      - PROMETHEUS_ENABLED=false
+      - ENVIRONMENT=development
+    depends_on:
+      - postgres
+      - mongodb
+
+  analytics-worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: linkforge_analytics_worker
+    command: python -m src.workers.analytics_worker
+    environment:
+      - DATABASE_URL=postgresql://linkforge_user:linkforge_password@postgres:5432/linkforge_db
+      - MONGODB_URI=mongodb://admin:adminpassword@mongodb:27017
+      - MONGODB_DB=linkforge_analytics
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - JAEGER_ENABLED=false
+      - PROMETHEUS_ENABLED=false
+      - ENVIRONMENT=development
+    depends_on:
+      - postgres
+      - mongodb
+      - kafka
+
+  qr-worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: linkforge_qr_worker
+    command: python -m src.workers.qr_worker
+    environment:
+      - DATABASE_URL=postgresql://linkforge_user:linkforge_password@postgres:5432/linkforge_db
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - FRONTEND_URL=http://localhost:3001
+      - JAEGER_ENABLED=false
+      - PROMETHEUS_ENABLED=false
+      - ENVIRONMENT=development
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+
+  webhook-retry-worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: linkforge_webhook_retry_worker
+    command: python -m src.workers.webhook_retry_worker
+    environment:
+      - DATABASE_URL=postgresql://linkforge_user:linkforge_password@postgres:5432/linkforge_db
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - JAEGER_ENABLED=false
+      - PROMETHEUS_ENABLED=false
+      - ENVIRONMENT=development
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+  mongodb_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+  loki_data:

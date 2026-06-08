@@ -1,0 +1,93 @@
+from fastapi import APIRouter, Depends, status
+from fastapi.security import HTTPAuthorizationCredentials
+
+from src.core.deps import get_current_user, bearer_scheme, get_auth_service
+from src.models.user import User
+from src.schemas.user import (
+    UserCreate, UserLogin, UserResponse, Token,
+    RefreshTokenRequest, ForgotPasswordRequest, ResetPasswordRequest,
+    VerifyEmailRequest,
+)
+from src.services.auth_service import AuthService
+from src.services.sso import SSOProviderRegistry
+
+router = APIRouter(prefix="/auth", tags=["Auth"])
+
+
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED,
+    summary="Register new user",
+    response_description="The newly created user (password excluded)")
+async def register(payload: UserCreate, svc: AuthService = Depends(get_auth_service)):
+    return await svc.register(payload.email, payload.password)
+
+
+@router.post("/login", response_model=Token,
+    summary="Login",
+    description="Authenticate with email and password to receive access and refresh tokens.")
+async def login(payload: UserLogin, svc: AuthService = Depends(get_auth_service)):
+    return await svc.login(payload.email, payload.password)
+
+
+@router.post("/refresh", response_model=Token,
+    summary="Refresh access token")
+async def refresh(payload: RefreshTokenRequest, svc: AuthService = Depends(get_auth_service)):
+    return await svc.refresh(payload.refresh_token)
+
+
+@router.post("/logout",
+    summary="Logout",
+    description="Blacklists the current access token so it can no longer be used.")
+async def logout(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    svc: AuthService = Depends(get_auth_service),
+):
+    await svc.logout(credentials.credentials)
+    return {"detail": "Successfully logged out"}
+
+
+@router.post("/forgot-password",
+    summary="Request password reset")
+async def forgot_password(payload: ForgotPasswordRequest, svc: AuthService = Depends(get_auth_service)):
+    await svc.forgot_password(payload.email)
+    return {"detail": "If the email exists, a password reset link has been sent"}
+
+
+@router.post("/reset-password",
+    summary="Reset password with token")
+async def reset_password(payload: ResetPasswordRequest, svc: AuthService = Depends(get_auth_service)):
+    await svc.reset_password(payload.token, payload.new_password)
+    return {"detail": "Password has been reset successfully"}
+
+
+@router.post("/verify-email",
+    summary="Verify email address")
+async def verify_email(payload: VerifyEmailRequest, svc: AuthService = Depends(get_auth_service)):
+    await svc.verify_email(payload.token)
+    return {"detail": "Email verified successfully"}
+
+
+@router.get("/me", response_model=UserResponse,
+    summary="Get current user profile")
+async def get_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
+@router.get("/providers",
+    summary="List SSO providers")
+async def list_providers():
+    return {"providers": SSOProviderRegistry.list_providers()}
+
+
+@router.post("/oauth/{provider}",
+    summary="Initiate OAuth flow",
+    description="Returns the authorization URL for the given SSO provider (Google, GitHub, etc.).")
+async def initiate_oauth(provider: str, svc: AuthService = Depends(get_auth_service)):
+    auth_url, state = await svc.oauth_init(provider)
+    return {"authorization_url": auth_url, "state": state}
+
+
+@router.get("/oauth/{provider}/callback", response_model=Token,
+    summary="Complete OAuth callback",
+    description="Exchange the OAuth authorization code for a JWT token pair.")
+async def oauth_callback(provider: str, code: str, state: str, svc: AuthService = Depends(get_auth_service)):
+    return await svc.oauth_callback(provider, code, state)

@@ -1,0 +1,14 @@
+# Environment variables with secrets
+.env
+backend/.env
+frontend/.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

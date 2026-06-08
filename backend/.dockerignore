@@ -1,0 +1,15 @@
+__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+.env
+.env.*
+.venv
+venv
+*.egg-info
+dist
+build
+README.md
+tests/
+alembic/versions/*.pyc
