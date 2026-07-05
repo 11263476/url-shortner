@@ -1,19 +1,29 @@
-FROM node:20-alpine AS builder
+FROM node:22-slim AS dependencies
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund
+
+FROM node:22-slim AS builder
+
+WORKDIR /app
+COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
+ENV NODE_ENV=production
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM node:22-slim AS runner
 
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/node_modules ./node_modules
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
+COPY --from=builder /app/public ./public
+RUN mkdir .next && chown node:node .next
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+
+USER node
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["node", "server.js"]
