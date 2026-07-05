@@ -1,11 +1,18 @@
 from fastapi import APIRouter, Depends, status
+from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials
 
-from src.core.deps import get_current_user, bearer_scheme, get_auth_service
+from src.core.config import settings
+from src.core.deps import bearer_scheme, get_auth_service, get_current_user
 from src.models.user import User
 from src.schemas.user import (
-    UserCreate, UserLogin, UserResponse, Token,
-    RefreshTokenRequest, ForgotPasswordRequest, ResetPasswordRequest,
+    ForgotPasswordRequest,
+    RefreshTokenRequest,
+    ResetPasswordRequest,
+    Token,
+    UserCreate,
+    UserLogin,
+    UserResponse,
     VerifyEmailRequest,
 )
 from src.services.auth_service import AuthService
@@ -86,8 +93,10 @@ async def initiate_oauth(provider: str, svc: AuthService = Depends(get_auth_serv
     return {"authorization_url": auth_url, "state": state}
 
 
-@router.get("/oauth/{provider}/callback", response_model=Token,
+@router.get("/oauth/{provider}/callback",
     summary="Complete OAuth callback",
-    description="Exchange the OAuth authorization code for a JWT token pair.")
+    description="Exchange the OAuth authorization code for a JWT token pair, then redirect to frontend.")
 async def oauth_callback(provider: str, code: str, state: str, svc: AuthService = Depends(get_auth_service)):
-    return await svc.oauth_callback(provider, code, state)
+    tokens = await svc.oauth_callback(provider, code, state)
+    redirect_url = f"{settings.FRONTEND_URL}/login?access_token={tokens.access_token}&refresh_token={tokens.refresh_token}"
+    return RedirectResponse(url=redirect_url, status_code=302)

@@ -1,6 +1,7 @@
-from pydantic import BaseModel, ConfigDict, HttpUrl, Field
 from datetime import datetime
-from typing import Optional, List
+from typing import Any, List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 
 class WebhookCreate(BaseModel):
@@ -28,8 +29,15 @@ class WebhookResponse(BaseModel):
     id: int
     workspace_id: int
     url: str
-    events: str
+    events: List[str]
     is_active: bool
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("events", mode="before")
+    @classmethod
+    def split_events(cls, v: Any) -> List[str]:
+        if isinstance(v, str):
+            return [e.strip() for e in v.split(",") if e.strip()]
+        return v

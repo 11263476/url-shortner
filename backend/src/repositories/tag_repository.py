@@ -1,7 +1,7 @@
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 
-from src.repositories.base import BaseRepository
 from src.models.tag import Tag
+from src.repositories.base import BaseRepository
 
 
 class TagRepository(BaseRepository[Tag]):

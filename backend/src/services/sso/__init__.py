@@ -1,5 +1,5 @@
-from .google_oauth import GoogleOAuthProvider
 from .github_oauth import GitHubOAuthProvider
+from .google_oauth import GoogleOAuthProvider
 
 
 class SSOProviderRegistry:

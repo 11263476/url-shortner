@@ -1,6 +1,8 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import computed_field
 from typing import Optional
+
+from pydantic import computed_field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "LinkForge URL Shortener"
@@ -35,6 +37,8 @@ class Settings(BaseSettings):
 
     # --- Redis (Upstash / Aiven / local Docker) ---
     REDIS_URL: str = "redis://localhost:6379"
+    UPSTASH_REDIS_REST_URL: Optional[str] = None
+    UPSTASH_REDIS_REST_TOKEN: Optional[str] = None
 
     # --- Rate Limiting Tiers ---
     RATE_LIMIT_IP_CAPACITY: int = 60
@@ -50,6 +54,7 @@ class Settings(BaseSettings):
     KAFKA_SASL_PASSWORD: Optional[str] = None
     # Path to the Aiven CA certificate (download from Aiven dashboard)
     KAFKA_SSL_CA_PATH: Optional[str] = None
+    SCHEMA_REGISTRY_URL: Optional[str] = None
 
     @computed_field
     @property
@@ -70,12 +75,13 @@ class Settings(BaseSettings):
     FROM_EMAIL: str = "noreply@linkforge.dev"
     FROM_NAME: str = "LinkForge"
     FRONTEND_URL: str = "http://localhost:3000"
+    BACKEND_URL: str = "http://127.0.0.1:8000"
 
     # --- JWT ---
     SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-    
+
     # --- Google OAuth 2.0 ---
     GOOGLE_OAUTH_CLIENT_ID: Optional[str] = None
     GOOGLE_OAUTH_CLIENT_SECRET: Optional[str] = None
@@ -85,17 +91,22 @@ class Settings(BaseSettings):
     GITHUB_OAUTH_CLIENT_ID: Optional[str] = None
     GITHUB_OAUTH_CLIENT_SECRET: Optional[str] = None
     GITHUB_OAUTH_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/oauth/github/callback"
-    
-    # --- Observability (OpenTelemetry, Prometheus, Loki, Jaeger) ---
-    ENVIRONMENT: str = "development"
+
+    # --- Observability (OpenTelemetry, Prometheus, Loki, Tempo) ---
+    ENVIRONMENT: str = "production"
     JAEGER_ENABLED: bool = False
     JAEGER_HOST: str = "localhost"
     JAEGER_PORT: int = 6831
-    PROMETHEUS_ENABLED: bool = False
+    PROMETHEUS_ENABLED: bool = True
     LOKI_ENABLED: bool = True
-    LOKI_URL: str = "http://localhost:3100"
-    OTEL_TRACES_EXPORTER: str = "jaeger"
+    LOKI_URL: str = "https://logs-prod-028.grafana.net/loki/api/v1/push"
+    LOKI_USERNAME: str = "1683438"
+    LOKI_PASSWORD: Optional[str] = None
+    OTEL_TRACES_EXPORTER: str = "otlp"
     OTEL_METRICS_EXPORTER: str = "prometheus"
+    OTEL_EXPORTER_OTLP_ENDPOINT: Optional[str] = None
+    OTEL_EXPORTER_OTLP_HEADERS: Optional[str] = None
+    PROMETHEUS_REMOTE_WRITE_URL: Optional[str] = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

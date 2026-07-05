@@ -1,7 +1,11 @@
-import httpx
+import logging
 from urllib.parse import urlencode
 
+import httpx
+
 from src.core.config import settings
+
+logger = logging.getLogger("url-shortener")
 
 
 class GoogleOAuthProvider:
@@ -26,38 +30,48 @@ class GoogleOAuthProvider:
 
     async def exchange_code(self, code: str) -> dict | None:
         async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                self.TOKEN_URL,
-                data={
-                    "client_id": settings.GOOGLE_OAUTH_CLIENT_ID,
-                    "client_secret": settings.GOOGLE_OAUTH_CLIENT_SECRET,
-                    "code": code,
-                    "grant_type": "authorization_code",
-                    "redirect_uri": settings.GOOGLE_OAUTH_REDIRECT_URI,
-                },
-                timeout=10.0,
-            )
-            if resp.status_code != 200:
+            try:
+                resp = await client.post(
+                    self.TOKEN_URL,
+                    data={
+                        "client_id": settings.GOOGLE_OAUTH_CLIENT_ID,
+                        "client_secret": settings.GOOGLE_OAUTH_CLIENT_SECRET,
+                        "code": code,
+                        "grant_type": "authorization_code",
+                        "redirect_uri": settings.GOOGLE_OAUTH_REDIRECT_URI,
+                    },
+                    timeout=10.0,
+                )
+                if resp.status_code != 200:
+                    logger.error(f"Google token exchange failed: {resp.status_code} - {resp.text}")
+                    return None
+                return resp.json()
+            except Exception as e:
+                logger.error(f"Google token exchange error: {e}")
                 return None
-            return resp.json()
 
     async def get_user_info(self, access_token: str) -> dict | None:
         async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                self.USERINFO_URL,
-                headers={"Authorization": f"Bearer {access_token}"},
-                timeout=10.0,
-            )
-            if resp.status_code != 200:
+            try:
+                resp = await client.get(
+                    self.USERINFO_URL,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    timeout=10.0,
+                )
+                if resp.status_code != 200:
+                    logger.error(f"Google userinfo failed: {resp.status_code} - {resp.text}")
+                    return None
+                data = resp.json()
+                return {
+                    "id": data.get("id"),
+                    "email": data.get("email"),
+                    "name": data.get("name"),
+                    "picture": data.get("picture"),
+                    "verified_email": data.get("verified_email", False),
+                }
+            except Exception as e:
+                logger.error(f"Google userinfo error: {e}")
                 return None
-            data = resp.json()
-            return {
-                "id": data.get("id"),
-                "email": data.get("email"),
-                "name": data.get("name"),
-                "picture": data.get("picture"),
-                "verified_email": data.get("verified_email", False),
-            }
 
     async def authenticate(self, code: str) -> dict | None:
         token_resp = await self.exchange_code(code)

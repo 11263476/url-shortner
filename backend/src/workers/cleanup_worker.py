@@ -1,11 +1,13 @@
-import asyncio, signal
+import asyncio
+import signal
+
 from sqlalchemy import select
 
-from src.logging import setup_logging, get_logger
 from src.core.database import AsyncSessionLocal
-from src.models.url import URL, URLStatus
-from src.repositories import URLRepository, AnalyticsRepository
 from src.documents.click_event import ClickEvent
+from src.log_utils import get_logger, setup_logging
+from src.models.url import URL, URLStatus
+from src.repositories import AnalyticsRepository, URLRepository
 
 
 async def run_cleanup(logger, db):
@@ -22,11 +24,11 @@ async def run_cleanup(logger, db):
     logger.info("Found %d soft-deleted URLs to purge.", len(deleted_rows))
     url_ids = [row.id for row in deleted_rows]
 
-    for row in deleted_rows:
-        try:
-            await ClickEvent.find(ClickEvent.short_code == row.short_code).delete()
-        except Exception as e:
-            logger.warning("Failed to purge MongoDB for %s: %s", row.short_code, str(e))
+    try:
+        short_codes = [row.short_code for row in deleted_rows]
+        await ClickEvent.find({"short_code": {"$in": short_codes}}).delete()
+    except Exception as e:
+        logger.warning("Failed to purge MongoDB events: %s", str(e))
 
     analytics_repo = AnalyticsRepository(db)
     await analytics_repo.delete_by_url_ids(url_ids)
@@ -45,11 +47,13 @@ async def start_worker():
     loop = asyncio.get_event_loop()
     stop = asyncio.Event()
 
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        try:
-            loop.add_signal_handler(sig, stop.set)
-        except NotImplementedError:
-            pass
+    for sig_name in ("SIGTERM", "SIGINT"):
+        sig = getattr(signal, sig_name, None)
+        if sig is not None:
+            try:
+                loop.add_signal_handler(sig, stop.set)
+            except NotImplementedError:
+                pass
 
     while not stop.is_set():
         try:

@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, status, UploadFile, File, Query
-from fastapi.responses import StreamingResponse
 from typing import Optional
 
-from src.core.deps import get_current_user, get_bulk_service
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
+
+from src.core.deps import get_bulk_service, get_current_user
 from src.models.user import User
 from src.services.bulk_service import BulkService
 
@@ -34,8 +35,11 @@ async def bulk_update(
 ):
     kwargs = {}
     if expires_at:
-        from datetime import datetime
-        kwargs["expires_at"] = datetime.fromisoformat(expires_at)
+        from datetime import datetime, timezone
+        dt = datetime.fromisoformat(expires_at)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        kwargs["expires_at"] = dt
     await svc.update(workspace_id, current_user.id, url_ids, **kwargs)
     return {"updated": len(url_ids)}
 
@@ -66,7 +70,7 @@ async def bulk_delete(workspace_id: int, url_ids: list[int], current_user: User 
     description="Export all URLs in a workspace as CSV or JSON file.")
 async def bulk_export(
     workspace_id: int = Query(..., description="Workspace to export"),
-    format: str = Query("csv", regex="^(csv|json)$", description="Export format"),
+    format: str = Query("csv", pattern="^(csv|json)$", description="Export format"),
     current_user: User = Depends(get_current_user),
     svc: BulkService = Depends(get_bulk_service),
 ):

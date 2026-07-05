@@ -1,11 +1,10 @@
-from fastapi import Request, HTTPException, status
-from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi import HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.core.database import AsyncSessionLocal
-from src.models.workspace_member import WorkspaceMember, MemberRole
-from src.core.audit_context import audit_ctx_var
-
+from src.models.workspace_member import MemberRole, WorkspaceMember
 
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
@@ -19,6 +18,8 @@ HIERARCHY = {
 class RBACMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if request.method not in WRITE_METHODS or not request.url.path.startswith("/api/v1/"):
+            return await call_next(request)
+        if request.url.path.startswith("/api/v1/admin/"):
             return await call_next(request)
 
         if not hasattr(request.state, "user_id") or not request.state.user_id:
@@ -45,17 +46,23 @@ class RBACMiddleware(BaseHTTPMiddleware):
         return None
 
 
-async def require_role(workspace_id: int, user_id: int, min_role: MemberRole) -> bool:
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(WorkspaceMember).where(
-                WorkspaceMember.workspace_id == workspace_id,
-                WorkspaceMember.user_id == user_id,
-            )
+async def require_role(workspace_id: int, user_id: int, min_role: MemberRole, db: AsyncSession | None = None) -> bool:
+    if db is None:
+        async with AsyncSessionLocal() as session:
+            return await _check_role(session, workspace_id, user_id, min_role)
+    return await _check_role(db, workspace_id, user_id, min_role)
+
+
+async def _check_role(db: AsyncSession, workspace_id: int, user_id: int, min_role: MemberRole) -> bool:
+    result = await db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.user_id == user_id,
         )
-        member = result.scalar_one_or_none()
-        if not member:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
-        if HIERARCHY.get(member.role, 0) < HIERARCHY.get(min_role, 0):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Requires {min_role.value} role or higher.")
-        return True
+    )
+    member = result.scalar_one_or_none()
+    if not member:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+    if HIERARCHY.get(member.role, 0) < HIERARCHY.get(min_role, 0):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Requires {min_role.value} role or higher.")
+    return True

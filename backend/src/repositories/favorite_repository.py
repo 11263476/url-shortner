@@ -1,7 +1,7 @@
-from sqlalchemy import select, and_, delete
+from sqlalchemy import and_, delete, select
 
-from src.repositories.base import BaseRepository
 from src.models.favorite import Favorite
+from src.repositories.base import BaseRepository
 
 
 class FavoriteRepository(BaseRepository[Favorite]):

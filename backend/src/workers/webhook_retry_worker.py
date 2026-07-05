@@ -1,11 +1,27 @@
-import asyncio, signal, json, httpx, hmac, hashlib
+import asyncio
+import hashlib
+import hmac
+import json
+import signal
+
+import httpx
 from sqlalchemy import select
 
-from src.logging import setup_logging, get_logger
 from src.core.database import AsyncSessionLocal
+from src.log_utils import get_logger, setup_logging
+from src.models.dead_letter import DeadLetterEvent
 from src.models.webhook import Webhook
 from src.models.webhook_event import WebhookEvent
 from src.services.webhook_service import decrypt_secret
+
+MAX_RETRIES = 5
+BASE_DELAY = 30
+MAX_DELAY = 3600
+
+
+def backoff_delay(retry_count: int) -> int:
+    delay = BASE_DELAY * (2 ** (retry_count - 1))
+    return min(delay, MAX_DELAY)
 
 
 async def retry_failed_events(logger):
@@ -13,7 +29,7 @@ async def retry_failed_events(logger):
         result = await db.execute(
             select(WebhookEvent).where(
                 WebhookEvent.status == "failed",
-                WebhookEvent.retry_count < 3,
+                WebhookEvent.retry_count < MAX_RETRIES,
             )
         )
         failed_events = result.scalars().all()
@@ -26,6 +42,10 @@ async def retry_failed_events(logger):
         for event in failed_events:
             wh = await db.get(Webhook, event.webhook_id)
             if not wh or not wh.is_active:
+                event.retry_count += 1
+                if event.retry_count >= MAX_RETRIES:
+                    await _move_to_dlq(db, event, "Webhook inactive")
+                    await db.delete(event)
                 continue
 
             payload = json.loads(event.payload)
@@ -51,31 +71,46 @@ async def retry_failed_events(logger):
             except Exception as e:
                 event.retry_count += 1
                 event.error = str(e)
+                if event.retry_count >= MAX_RETRIES:
+                    await _move_to_dlq(db, event, str(e))
+                    await db.delete(event)
 
         await db.commit()
         logger.info("Webhook retry scan complete.")
 
 
+async def _move_to_dlq(db, event, error: str):
+    dlq = DeadLetterEvent(
+        topic=f"webhook:{event.event_type}",
+        event_key=str(event.webhook_id),
+        payload=event.payload,
+        error=error,
+        retry_count=event.retry_count,
+    )
+    db.add(dlq)
+
+
 async def start_worker():
     setup_logging()
     logger = get_logger("webhook-retry-worker")
-    logger.info("Webhook Retry Worker started")
-    interval = 120
+    logger.info("Webhook Retry Worker started (max_retries=%d, base_delay=%ds)", MAX_RETRIES, BASE_DELAY)
     loop = asyncio.get_event_loop()
     stop = asyncio.Event()
 
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        try:
-            loop.add_signal_handler(sig, stop.set)
-        except NotImplementedError:
-            pass
+    for sig_name in ("SIGTERM", "SIGINT"):
+        sig = getattr(signal, sig_name, None)
+        if sig is not None:
+            try:
+                loop.add_signal_handler(sig, stop.set)
+            except NotImplementedError:
+                pass
 
     while not stop.is_set():
         try:
             await retry_failed_events(logger)
         except Exception as e:
             logger.warning("Error in webhook retry loop: %s", str(e))
-        await asyncio.sleep(interval)
+        await asyncio.sleep(60)
 
     logger.info("Webhook Retry Worker stopped")
 

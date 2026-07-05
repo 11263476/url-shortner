@@ -12,3 +12,27 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+backend/coverage.xml
+backend/.backend_pid
+
+# Logs
+backend/logs/
+*.log
+
+# Node
+node_modules/
+.next/
+frontend/frontend@0.1.0
+frontend/next
+frontend/npm
+
+# Build artifacts
+*.egg-info/
+dist/
+build/

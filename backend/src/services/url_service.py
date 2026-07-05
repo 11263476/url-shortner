@@ -1,20 +1,25 @@
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.repositories.url_repository import URLRepository
-from src.repositories.workspace_repository import WorkspaceRepository
+from src.core.config import settings
+from src.core.redis import delete_url_cache
+from src.core.security import hash_password
+from src.errors import (
+    AliasConflict,
+    AliasReserved,
+    FolderNotInWorkspace,
+    URLNotFound,
+    WorkspaceNotFound,
+)
+from src.events.dispatcher import EventDispatcher
+from src.models.url import URL, URLStatus
 from src.repositories.folder_repository import FolderRepository
 from src.repositories.tag_repository import TagRepository
-from src.core.security import hash_password
-from src.core.redis import delete_url_cache
-from src.events.dispatcher import EventDispatcher
-from src.utils.base62 import generate_short_code
-from src.models.url import URL, URLStatus
+from src.repositories.url_repository import URLRepository
+from src.repositories.workspace_repository import WorkspaceRepository
 from src.services.audit_service import AuditService
 from src.services.webhook_service import WebhookService
-from src.errors import (
-    WorkspaceNotFound, FolderNotInWorkspace, AliasReserved,
-    AliasConflict, CannotGenerateShortCode, URLNotFound,
-)
+from src.utils.base62 import hashid_encode
 
 RESERVED_ALIASES = {"admin", "api", "login", "register", "logout", "verify", "reset", "health", "metrics", "dashboard"}
 
@@ -61,13 +66,9 @@ class URLService:
                 raise AliasConflict()
             short_code = alias
         else:
-            for _ in range(5):
-                candidate = generate_short_code()
-                if not await self.url_repo.alias_exists(candidate):
-                    short_code = candidate
-                    break
-            if not short_code:
-                raise CannotGenerateShortCode()
+            result = await self.db.execute(text("SELECT nextval('url_short_code_seq')"))
+            seq_value = result.scalar()
+            short_code = hashid_encode(seq_value, settings.SECRET_KEY)
 
         password_hash = hash_password(payload.password) if payload.password else None
 
@@ -97,7 +98,8 @@ class URLService:
 
         self.db.add(url)
         await self.db.commit()
-        await self.db.refresh(url)
+        url = await self.url_repo.get(url.id)
+        _ = [t.name for t in url.tags]
 
         try:
             await self.event_dispatcher.dispatch("url-created", {
@@ -105,27 +107,40 @@ class URLService:
                 "original_url": url.original_url,
                 "workspace_id": url.workspace_id,
                 "user_id": url.user_id,
-                "base_url": "http://localhost:8000",
+                "base_url": settings.FRONTEND_URL,
             }, key=url.short_code)
         except Exception as e:
             print(f"[WARNING] Failed to publish url-created event: {e}")
 
-        await self.audit.log(
-            actor_id=user_id, action="create", resource_type="url",
-            resource_id=url.id, after={"short_code": url.short_code, "original_url": url.original_url},
-            workspace_id=payload.workspace_id,
-        )
+        try:
+            await self.audit.log(
+                actor_id=user_id, action="create", resource_type="url",
+                resource_id=url.id, after={"short_code": url.short_code, "original_url": url.original_url},
+                workspace_id=payload.workspace_id,
+            )
+        except Exception as e:
+            print(f"[WARNING] Audit log failed: {e}")
+            await self.db.rollback()
+            url = await self.url_repo.get(url.id)
+            _ = [t.name for t in url.tags]
 
-        await self.webhooks.deliver_event(payload.workspace_id, "url.created", {
-            "short_code": url.short_code, "original_url": url.original_url,
-            "workspace_id": url.workspace_id, "user_id": user_id,
-        })
+        try:
+            await self.webhooks.deliver_event(payload.workspace_id, "url.created", {
+                "short_code": url.short_code, "original_url": url.original_url,
+                "workspace_id": url.workspace_id, "user_id": user_id,
+            })
+        except Exception as e:
+            print(f"[WARNING] Webhook delivery failed: {e}")
+            await self.db.rollback()
+            url = await self.url_repo.get(url.id)
+            _ = [t.name for t in url.tags]
 
         return url
 
-    async def list(self, workspace_id: int, user_id: int, **filters) -> list[URL]:
-        await self._verify_workspace_access(workspace_id, user_id)
-        return await self.url_repo.get_workspace_urls(workspace_id, **filters)
+    async def list(self, workspace_id: int | None, user_id: int, **filters) -> dict:
+        if workspace_id is not None:
+            await self._verify_workspace_access(workspace_id, user_id)
+        return await self.url_repo.get_workspace_urls(workspace_id, user_id=user_id, **filters)
 
     async def get(self, id: int, user_id: int) -> URL:
         url = await self.url_repo.get(id)
@@ -165,32 +180,53 @@ class URLService:
             url.tags = db_tags
         await self.db.commit()
         await delete_url_cache(url.short_code)
-        await self.db.refresh(url)
+        url = await self.url_repo.get(url.id)
+        _ = [t.name for t in url.tags]
         after = {"original_url": url.original_url, "status": url.status.value, "folder_id": url.folder_id}
-        await self.audit.log(
-            actor_id=user_id, action="update", resource_type="url",
-            resource_id=url.id, before=before, after=after,
-            workspace_id=url.workspace_id,
-        )
+        try:
+            await self.audit.log(
+                actor_id=user_id, action="update", resource_type="url",
+                resource_id=url.id, before=before, after=after,
+                workspace_id=url.workspace_id,
+            )
+        except Exception as e:
+            print(f"[WARNING] Audit log failed: {e}")
+            await self.db.rollback()
 
-        await self.webhooks.deliver_event(url.workspace_id, "url.updated", {
-            "short_code": url.short_code, "original_url": url.original_url,
-            "workspace_id": url.workspace_id, "user_id": user_id,
-        })
+        try:
+            await self.webhooks.deliver_event(url.workspace_id, "url.updated", {
+                "short_code": url.short_code, "original_url": url.original_url,
+                "workspace_id": url.workspace_id, "user_id": user_id,
+            })
+        except Exception as e:
+            print(f"[WARNING] Webhook delivery failed: {e}")
+            await self.db.rollback()
 
-        return url
+        return await self.url_repo.get(url.id)
+
+    async def update_qr(self, id: int, qr_b64: str, user_id: int) -> None:
+        await self.get(id, user_id)
+        await self.url_repo.update(id, qr_code=qr_b64)
 
     async def delete(self, id: int, user_id: int) -> None:
         url = await self.get(id, user_id)
         await self.url_repo.soft_delete(id)
         await delete_url_cache(url.short_code)
-        await self.audit.log(
-            actor_id=user_id, action="delete", resource_type="url",
-            resource_id=url.id, before={"short_code": url.short_code, "original_url": url.original_url},
-            workspace_id=url.workspace_id,
-        )
+        try:
+            await self.audit.log(
+                actor_id=user_id, action="delete", resource_type="url",
+                resource_id=url.id, before={"short_code": url.short_code, "original_url": url.original_url},
+                workspace_id=url.workspace_id,
+            )
+        except Exception as e:
+            print(f"[WARNING] Audit log failed: {e}")
+            await self.db.rollback()
 
-        await self.webhooks.deliver_event(url.workspace_id, "url.deleted", {
-            "short_code": url.short_code, "original_url": url.original_url,
-            "workspace_id": url.workspace_id, "user_id": user_id,
-        })
+        try:
+            await self.webhooks.deliver_event(url.workspace_id, "url.deleted", {
+                "short_code": url.short_code, "original_url": url.original_url,
+                "workspace_id": url.workspace_id, "user_id": user_id,
+            })
+        except Exception as e:
+            print(f"[WARNING] Webhook delivery failed: {e}")
+            await self.db.rollback()

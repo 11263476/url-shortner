@@ -1,12 +1,14 @@
-import asyncio, signal
-from datetime import datetime
+import asyncio
+import signal
+from datetime import datetime, timezone
+
 from sqlalchemy import select
 
-from src.logging import setup_logging, get_logger
 from src.core.database import AsyncSessionLocal
+from src.core.redis import delete_url_cache
+from src.log_utils import get_logger, setup_logging
 from src.models.url import URL, URLStatus
 from src.repositories import URLRepository
-from src.core.redis import delete_url_cache
 
 
 async def scan_and_expire_urls(logger):
@@ -16,7 +18,7 @@ async def scan_and_expire_urls(logger):
             select(URL).where(
                 URL.status == URLStatus.active,
                 URL.expires_at.isnot(None),
-                URL.expires_at < datetime.utcnow(),
+                URL.expires_at < datetime.now(timezone.utc),
             )
         )
         expired_urls = result.scalars().all()
@@ -39,11 +41,13 @@ async def start_worker():
     loop = asyncio.get_event_loop()
     stop = asyncio.Event()
 
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        try:
-            loop.add_signal_handler(sig, stop.set)
-        except NotImplementedError:
-            pass
+    for sig_name in ("SIGTERM", "SIGINT"):
+        sig = getattr(signal, sig_name, None)
+        if sig is not None:
+            try:
+                loop.add_signal_handler(sig, stop.set)
+            except NotImplementedError:
+                pass
 
     while not stop.is_set():
         try:

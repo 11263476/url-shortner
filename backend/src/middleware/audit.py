@@ -1,7 +1,7 @@
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from src.core.audit_context import audit_ctx_var, AuditContextData
+from src.core.audit_context import AuditContextData, audit_ctx_var
 
 
 class AuditContextMiddleware(BaseHTTPMiddleware):

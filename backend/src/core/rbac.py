@@ -1,5 +1,5 @@
-from src.models.workspace_member import MemberRole
 from src.errors import ForbiddenError
+from src.models.workspace_member import MemberRole
 
 
 def check_role(min_role: MemberRole, actual_role: MemberRole | None):

@@ -1,23 +1,24 @@
-from fastapi import APIRouter, Depends, status
 from typing import List
+
+from fastapi import APIRouter, Depends, status
 
 from src.core.deps import get_current_user, get_workspace_service
 from src.models.user import User
 from src.schemas.workspace import WorkspaceCreate, WorkspaceResponse
-from src.schemas.workspace_invite import InviteCreate, InviteResponse, AcceptInviteRequest
+from src.schemas.workspace_invite import AcceptInviteRequest, InviteCreate, InviteResponse
 from src.schemas.workspace_member import MemberResponse, UpdateMemberRole
 from src.services.workspace_service import WorkspaceService
 
 router = APIRouter(prefix="/workspaces", tags=["Workspaces"])
 
 
-@router.post("/", response_model=WorkspaceResponse, status_code=status.HTTP_201_CREATED,
+@router.post("", response_model=WorkspaceResponse, status_code=status.HTTP_201_CREATED,
     summary="Create workspace")
 async def create(payload: WorkspaceCreate, current_user: User = Depends(get_current_user), svc: WorkspaceService = Depends(get_workspace_service)):
     return await svc.create(payload.name, current_user.id)
 
 
-@router.get("/", response_model=List[WorkspaceResponse],
+@router.get("", response_model=List[WorkspaceResponse],
     summary="List workspaces",
     description="Returns all workspaces the current user owns or is a member of.")
 async def list_(current_user: User = Depends(get_current_user), svc: WorkspaceService = Depends(get_workspace_service)):
@@ -28,6 +29,17 @@ async def list_(current_user: User = Depends(get_current_user), svc: WorkspaceSe
     summary="Get workspace details")
 async def get(id: int, current_user: User = Depends(get_current_user), svc: WorkspaceService = Depends(get_workspace_service)):
     return await svc.get(id, current_user.id)
+
+
+@router.put("/{id}", summary="Rename workspace")
+async def rename(id: int, payload: WorkspaceCreate, current_user: User = Depends(get_current_user), svc: WorkspaceService = Depends(get_workspace_service)):
+    return await svc.rename(id, payload.name, current_user.id)
+
+
+@router.delete("/{id}", summary="Delete workspace (owner only)")
+async def delete(id: int, current_user: User = Depends(get_current_user), svc: WorkspaceService = Depends(get_workspace_service)):
+    await svc.delete(id, current_user.id)
+    return {"detail": "Workspace deleted."}
 
 
 @router.post("/{id}/invites", response_model=InviteResponse, status_code=status.HTTP_201_CREATED,

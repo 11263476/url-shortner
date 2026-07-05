@@ -1,30 +1,32 @@
-from fastapi import APIRouter, Depends, status, Query
-from fastapi.responses import Response
+import base64
+import io as _io
 from typing import Optional
-import qrcode, io as _io, base64
 
-from src.core.deps import get_current_user, get_url_service, PaginationParams
+import qrcode
+from fastapi import APIRouter, Depends, Query, status
+
 from src.core.config import settings
-from src.models.user import User
+from src.core.deps import PaginationParams, get_current_user, get_url_service
 from src.models.url import URLStatus
-from src.schemas.url import URLCreate, URLResponse, URLUpdate
+from src.models.user import User
+from src.schemas.url import URLCreate, URLListResponse, URLResponse, URLUpdate
 from src.services.url_service import URLService
 
 router = APIRouter(prefix="/urls", tags=["URLs"])
 
 
-@router.post("/", response_model=URLResponse, status_code=status.HTTP_201_CREATED,
+@router.post("", response_model=URLResponse, status_code=status.HTTP_201_CREATED,
     summary="Create short URL",
     response_description="The newly created shortened URL")
 async def create_url(payload: URLCreate, current_user: User = Depends(get_current_user), svc: URLService = Depends(get_url_service)):
     return await svc.create(payload, current_user.id)
 
 
-@router.get("/", response_model=list[URLResponse],
+@router.get("", response_model=URLListResponse,
     summary="List URLs",
     description="List and search URLs in a workspace with pagination, filtering by folder, tag, status, or free-text search.")
 async def list_urls(
-    workspace_id: int = Query(..., description="Filter by workspace ID"),
+    workspace_id: Optional[int] = Query(None, description="Filter by workspace ID"),
     folder_id: Optional[int] = Query(None, description="Filter by folder ID"),
     tag: Optional[str] = Query(None, description="Filter by tag name"),
     search: Optional[str] = Query(None, description="Free-text search in original URL"),
@@ -58,16 +60,16 @@ async def delete_url(id: int, current_user: User = Depends(get_current_user), sv
 
 @router.get("/{id}/qr",
     summary="Get QR code",
-    description="Returns the QR code image for a short URL as a downloadable PNG.")
+    description="Returns the QR code for a short URL as a base64-encoded PNG.")
 async def get_qr_code(id: int, current_user: User = Depends(get_current_user), svc: URLService = Depends(get_url_service)):
-    url = await svc.get(id, current_user.id)
-    if url.qr_code:
-        png_bytes = base64.b64decode(url.qr_code)
-    else:
+    url_obj = await svc.get(id, current_user.id)
+    if not url_obj.qr_code:
         qr = qrcode.QRCode(version=1, box_size=10, border=4)
-        qr.add_data(f"{settings.FRONTEND_URL or 'http://localhost:3000'}/{url.short_code}")
+        qr.add_data(f"{settings.BACKEND_URL or 'http://127.0.0.1:8000'}/{url_obj.short_code}")
         qr.make(fit=True)
         buf = _io.BytesIO()
         qr.make_image(fill_color="black", back_color="white").save(buf, format="PNG")
-        png_bytes = buf.getvalue()
-    return Response(content=png_bytes, media_type="image/png", headers={"Content-Disposition": f"attachment; filename={url.short_code}.png"})
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        await svc.update_qr(id, b64, current_user.id)
+        url_obj.qr_code = b64
+    return {"qr_code": url_obj.qr_code}

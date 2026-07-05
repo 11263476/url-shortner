@@ -1,10 +1,9 @@
-from sqlalchemy.ext.asyncio import AsyncSession
 import json
 
+from src.core.audit_context import audit_ctx_var
+from src.errors import ForbiddenError, WorkspaceNotFound
 from src.repositories.audit_log_repository import AuditLogRepository
 from src.repositories.workspace_repository import WorkspaceRepository
-from src.core.audit_context import audit_ctx_var
-from src.errors import WorkspaceNotFound
 
 
 class AuditService:
@@ -41,10 +40,14 @@ class AuditService:
         return await self.repo.get_workspace_logs(workspace_id, skip=skip, limit=limit)
 
     async def get_resource_logs(self, resource_type: str, resource_id: int, user_id: int, skip: int = 0, limit: int = 100):
-        ws = await self.workspace_repo.verify_access(resource_id, user_id)
-        if not ws:
-            raise WorkspaceNotFound()
+        logs = await self.repo.get_resource_logs(resource_type, resource_id, skip=0, limit=1)
+        if logs and logs[0].workspace_id:
+            ws = await self.workspace_repo.verify_access(logs[0].workspace_id, user_id)
+            if not ws:
+                raise WorkspaceNotFound()
         return await self.repo.get_resource_logs(resource_type, resource_id, skip=skip, limit=limit)
 
     async def get_actor_logs(self, actor_id: int, user_id: int, skip: int = 0, limit: int = 100):
+        if actor_id != user_id:
+            raise ForbiddenError("You can only view your own audit logs")
         return await self.repo.get_actor_logs(actor_id, skip=skip, limit=limit)

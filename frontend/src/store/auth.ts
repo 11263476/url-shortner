@@ -1,8 +1,15 @@
 import { create } from "zustand"
+import { clearTokenCookies } from "@/lib/token-cookie"
 
-interface User {
+export interface User {
   id: number
   email: string
+  is_verified: boolean
+  role: string
+  plan: string
+  is_superadmin: boolean
+  avatar_url: string | null
+  created_at: string
 }
 
 interface AuthState {
@@ -21,6 +28,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: () => {
     localStorage.removeItem("access_token")
     localStorage.removeItem("refresh_token")
+    clearTokenCookies()
     set({ user: null })
   },
 }))

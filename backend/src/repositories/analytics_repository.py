@@ -1,8 +1,8 @@
-from sqlalchemy import select, delete
+from sqlalchemy import delete
 from sqlalchemy.dialects.postgresql import insert
 
-from src.repositories.base import BaseRepository
 from src.models.analytics import URLAnalyticsSummary
+from src.repositories.base import BaseRepository
 
 
 class AnalyticsRepository(BaseRepository[URLAnalyticsSummary]):
@@ -12,16 +12,19 @@ class AnalyticsRepository(BaseRepository[URLAnalyticsSummary]):
     async def get_by_url_id(self, url_id: int) -> URLAnalyticsSummary | None:
         return await self.get(url_id)
 
-    async def upsert_click(self, url_id: int, clicked_at) -> None:
+    async def upsert_click(self, url_id: int, clicked_at, is_unique: bool = True) -> None:
         stmt = insert(URLAnalyticsSummary).values(
             url_id=url_id, total_clicks=1, unique_clicks=1, last_clicked_at=clicked_at
         )
+        update_dict = {
+            "total_clicks": URLAnalyticsSummary.total_clicks + 1,
+            "last_clicked_at": clicked_at,
+        }
+        if is_unique:
+            update_dict["unique_clicks"] = URLAnalyticsSummary.unique_clicks + 1
         stmt = stmt.on_conflict_do_update(
             index_elements=["url_id"],
-            set_={
-                "total_clicks": URLAnalyticsSummary.total_clicks + 1,
-                "last_clicked_at": clicked_at,
-            },
+            set_=update_dict,
         )
         await self.db.execute(stmt)
         await self.db.commit()

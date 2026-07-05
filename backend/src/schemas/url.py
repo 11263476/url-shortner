@@ -1,6 +1,8 @@
-from pydantic import BaseModel, HttpUrl, ConfigDict, Field
 from datetime import datetime
-from typing import Optional, List
+from typing import Any, List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_serializer, field_validator
+
 from src.models.url import URLStatus
 
 
@@ -45,9 +47,31 @@ class URLResponse(BaseModel):
     status: URLStatus
     qr_code: Optional[str] = None
     created_at: datetime
+    tags: List[str] = []
 
     model_config = ConfigDict(from_attributes=True)
 
+    @field_validator('tags', mode='before')
+    @classmethod
+    def handle_tags_field(cls, v: Any) -> List[str]:
+        if isinstance(v, list):
+            if len(v) > 0 and hasattr(v[0], 'name'):
+                return [t.name for t in v]
+            return v
+        return v
+
+    @field_serializer("tags", when_used="json-unless-none")
+    def serialize_tags(self, v) -> List[str]:
+        if not v:
+            return []
+        if isinstance(v, list) and len(v) > 0 and hasattr(v[0], 'name'):
+            return [t.name for t in v]
+        return v
+
+
+class URLListResponse(BaseModel):
+    items: List[URLResponse]
+    total: int
 
 class URLUpdate(BaseModel):
     original_url: Optional[HttpUrl] = Field(None, description="New destination URL")

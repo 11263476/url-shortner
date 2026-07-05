@@ -1,5 +1,7 @@
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
 from src.models.workspace_invite import InviteStatus
 
 
@@ -19,6 +21,7 @@ class InviteResponse(BaseModel):
     invited_by: int
     role: str
     status: InviteStatus
+    token: str | None = None
     expires_at: datetime
     created_at: datetime
 

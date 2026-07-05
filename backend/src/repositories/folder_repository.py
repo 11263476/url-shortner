@@ -1,7 +1,7 @@
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 
-from src.repositories.base import BaseRepository
 from src.models.folder import Folder
+from src.repositories.base import BaseRepository
 
 
 class FolderRepository(BaseRepository[Folder]):

@@ -1,11 +1,11 @@
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.middleware.rbac import require_role
-from src.models.workspace_member import WorkspaceMember, MemberRole
 from src.models.user import User
 from src.models.workspace import Workspace
+from src.models.workspace_member import MemberRole, WorkspaceMember
 
 
 @pytest.mark.asyncio
@@ -16,9 +16,9 @@ async def test_require_role_admin(db: AsyncSession, test_user: User, test_worksp
         role=MemberRole.admin,
     )
     db.add(member)
-    await db.commit()
+    await db.flush()
 
-    result = await require_role(workspace_id=test_workspace.id, user_id=test_user.id, min_role=MemberRole.admin)
+    result = await require_role(workspace_id=test_workspace.id, user_id=test_user.id, min_role=MemberRole.admin, db=db)
     assert result is True
 
 
@@ -30,9 +30,9 @@ async def test_require_role_editor_has_admin(db: AsyncSession, test_user: User, 
         role=MemberRole.admin,
     )
     db.add(member)
-    await db.commit()
+    await db.flush()
 
-    result = await require_role(workspace_id=test_workspace.id, user_id=test_user.id, min_role=MemberRole.editor)
+    result = await require_role(workspace_id=test_workspace.id, user_id=test_user.id, min_role=MemberRole.editor, db=db)
     assert result is True
 
 
@@ -44,17 +44,17 @@ async def test_require_role_viewer_denied_for_editor(db: AsyncSession, test_user
         role=MemberRole.viewer,
     )
     db.add(member)
-    await db.commit()
+    await db.flush()
 
     with pytest.raises(HTTPException) as exc:
-        await require_role(workspace_id=test_workspace.id, user_id=test_user.id, min_role=MemberRole.editor)
+        await require_role(workspace_id=test_workspace.id, user_id=test_user.id, min_role=MemberRole.editor, db=db)
     assert exc.value.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_require_role_no_membership(db: AsyncSession, test_workspace: Workspace):
     with pytest.raises(HTTPException) as exc:
-        await require_role(workspace_id=test_workspace.id, user_id=99999, min_role=MemberRole.viewer)
+        await require_role(workspace_id=test_workspace.id, user_id=99999, min_role=MemberRole.viewer, db=db)
     assert exc.value.status_code == 403
 
 
@@ -66,7 +66,7 @@ async def test_role_hierarchy_admin_greater_than_viewer(db: AsyncSession, test_u
         role=MemberRole.admin,
     )
     db.add(member)
-    await db.commit()
+    await db.flush()
 
-    result = await require_role(workspace_id=test_workspace.id, user_id=test_user.id, min_role=MemberRole.viewer)
+    result = await require_role(workspace_id=test_workspace.id, user_id=test_user.id, min_role=MemberRole.viewer, db=db)
     assert result is True

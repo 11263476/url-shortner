@@ -1,8 +1,11 @@
-from sqlalchemy import String, Boolean, Enum
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from src.models.base import Base
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
+
+from sqlalchemy import Boolean, DateTime, Enum, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from src.models.base import Base
+
 
 class RoleEnum(str, enum.Enum):
     owner = "owner"
@@ -13,6 +16,7 @@ class RoleEnum(str, enum.Enum):
 class PlanEnum(str, enum.Enum):
     free = "free"
     premium = "premium"
+    enterprise = "enterprise"
 
 class User(Base):
     __tablename__ = "users"
@@ -23,8 +27,12 @@ class User(Base):
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     role: Mapped[RoleEnum] = mapped_column(Enum(RoleEnum), default=RoleEnum.owner)
     plan: Mapped[PlanEnum] = mapped_column(Enum(PlanEnum), default=PlanEnum.free)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
-    
+    is_superadmin: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    # Avatar
+    avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)
+
     # OAuth fields
     google_id: Mapped[str | None] = mapped_column(String, unique=True, index=True, nullable=True)
     oauth_provider: Mapped[str | None] = mapped_column(String, nullable=True)  # e.g., 'google', 'github'

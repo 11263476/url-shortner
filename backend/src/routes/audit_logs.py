@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, Query
 from typing import List
 
-from src.core.deps import get_current_user, get_audit_service, PaginationParams
+from fastapi import APIRouter, Depends
+
+from src.core.deps import PaginationParams, get_audit_service, get_current_user
 from src.models.user import User
 from src.schemas.audit_log import AuditLogResponse
 from src.services.audit_service import AuditService

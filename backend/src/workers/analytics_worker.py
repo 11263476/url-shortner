@@ -1,13 +1,20 @@
-import asyncio, json, ssl
-from aiokafka import AIOKafkaConsumer
-from user_agents import parse
+import asyncio
+import json
+import ssl
 from datetime import datetime
 
-from src.logging import setup_logging, get_logger
+from user_agents import parse
+
 from src.core.config import settings
 from src.core.database import AsyncSessionLocal
-from src.repositories import URLRepository, AnalyticsRepository
+from src.core.mongodb import init_mongodb
 from src.documents.click_event import ClickEvent
+from src.events.kafka import publish_raw
+from src.events.schemas import deserialize
+from src.log_utils import get_logger, setup_logging
+from src.repositories import AnalyticsRepository, URLRepository
+from src.workers._sni_patch import apply_sni_patch
+from src.workers.kafka_consumer_pool import KafkaConnectionPool
 
 
 async def consume_url_clicked_events():
@@ -17,9 +24,13 @@ async def consume_url_clicked_events():
     kwargs = {
         "bootstrap_servers": settings.KAFKA_BOOTSTRAP_SERVERS,
         "security_protocol": settings.KAFKA_SECURITY_PROTOCOL,
-        "group_id": "analytics-worker-group",
+        "group_id": "analytics-worker-v3",
         "auto_offset_reset": "earliest",
         "enable_auto_commit": False,
+        "session_timeout_ms": 45000,
+        "heartbeat_interval_ms": 15000,
+        "request_timeout_ms": 120000,
+        "max_poll_interval_ms": 300000,
     }
 
     if settings.KAFKA_SASL_USERNAME:
@@ -29,22 +40,44 @@ async def consume_url_clicked_events():
 
     if settings.KAFKA_SSL_CA_PATH:
         context = ssl.create_default_context(cafile=settings.KAFKA_SSL_CA_PATH)
+        context.check_hostname = False
         kwargs["ssl_context"] = context
 
-    consumer = AIOKafkaConsumer("url-clicked", **kwargs)
-    await consumer.start()
+    try:
+        await init_mongodb()
+        logger.info("MongoDB initialized")
+    except Exception as e:
+        logger.warning("MongoDB connection failed (analytics will retry): %s", str(e))
+
+    apply_sni_patch(settings.KAFKA_BOOTSTRAP_SERVERS)
+
+    kwargs_without_bootstrap = kwargs.copy()
+    kwargs_without_bootstrap.pop('bootstrap_servers', None)
+    pool = KafkaConnectionPool(settings.KAFKA_BOOTSTRAP_SERVERS, **kwargs_without_bootstrap)
     logger.info("Analytics Worker listening on 'url-clicked'...")
 
+    await pool.safe_consume(
+        topics=["url-clicked"],
+        callback=lambda msg, consumer: handle_analytics_message(msg, consumer, logger),
+        auto_commit=False
+    )
+
+
+async def handle_analytics_message(msg, consumer, logger):
     try:
-        async for msg in consumer:
-            try:
-                event_data = json.loads(msg.value.decode("utf-8"))
-                await process_event(event_data, logger)
-                await consumer.commit()
-            except Exception as e:
-                logger.warning("Error processing event at offset %s: %s", msg.offset, str(e))
-    finally:
-        await consumer.stop()
+        try:
+            event_data = deserialize("url-clicked", msg.value)
+        except Exception:
+            event_data = json.loads(msg.value.decode("utf-8"))
+        await process_event(event_data, logger)
+        await consumer.commit()
+    except Exception:
+        logger.exception("Error processing event at offset %s", msg.offset)
+        try:
+            await publish_raw("dlq-url-clicked", msg.value, msg.key)
+        except Exception as dlq_e:
+            logger.error("Failed to send to DLQ: %s", str(dlq_e))
+        await consumer.commit()
 
 
 async def process_event(event_data: dict, logger):
@@ -56,8 +89,7 @@ async def process_event(event_data: dict, logger):
         os = user_agent.os.family
         device = user_agent.device.family
 
-    click_event = ClickEvent(
-        event_id=event_data.get("event_id"),
+    click_kwargs = dict(
         short_code=event_data["short_code"],
         original_url=event_data["original_url"],
         workspace_id=event_data["workspace_id"],
@@ -65,8 +97,17 @@ async def process_event(event_data: dict, logger):
         user_agent=ua_string,
         referer=event_data.get("referer"),
         browser=browser, os=os, device=device,
+        country=event_data.get("country"),
+        city=event_data.get("city"),
+        utm_source=event_data.get("utm_source"),
+        utm_medium=event_data.get("utm_medium"),
+        utm_campaign=event_data.get("utm_campaign"),
         clicked_at=datetime.fromisoformat(event_data["clicked_at"]),
     )
+    event_id = event_data.get("event_id")
+    if event_id:
+        click_kwargs["event_id"] = event_id
+    click_event = ClickEvent(**click_kwargs)
 
     try:
         await click_event.insert()

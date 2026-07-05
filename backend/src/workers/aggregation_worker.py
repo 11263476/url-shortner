@@ -1,13 +1,26 @@
-import asyncio, signal
+import asyncio
+import signal
+import traceback
+from datetime import datetime, timedelta, timezone
 
-from src.logging import setup_logging, get_logger
 from src.core.database import AsyncSessionLocal
-from src.repositories import URLRepository, AnalyticsRepository
+from src.core.mongodb import init_mongodb
 from src.documents.click_event import ClickEvent
+from src.log_utils import get_logger, setup_logging
+from src.repositories import AnalyticsRepository, URLRepository
+
+_last_cutoff: datetime | None = None
 
 
 async def run_aggregation_rollup(logger):
-    pipeline = [
+    global _last_cutoff
+    match = {}
+    if _last_cutoff:
+        match["clicked_at"] = {"$gt": _last_cutoff}
+    pipeline = []
+    if match:
+        pipeline.append({"$match": match})
+    pipeline.extend([
         {"$group": {
             "_id": "$short_code",
             "unique_ips": {"$addToSet": "$ip_address"},
@@ -18,16 +31,19 @@ async def run_aggregation_rollup(logger):
             "unique_clicks": {"$size": "$unique_ips"},
             "total_clicks": "$total_clicks",
         }},
-    ]
+    ])
 
     try:
         mongo_results = await ClickEvent.aggregate(pipeline).to_list()
     except Exception as e:
-        logger.error("Failed to aggregate MongoDB events: %s", str(e))
+        logger.error("Failed to aggregate MongoDB events: %s\n%s", str(e), traceback.format_exc())
         return
 
     if not mongo_results:
+        _last_cutoff = datetime.now(timezone.utc) - timedelta(seconds=1)
         return
+
+    _last_cutoff = datetime.now(timezone.utc) - timedelta(seconds=1)
 
     async with AsyncSessionLocal() as db:
         url_repo = URLRepository(db)
@@ -49,15 +65,22 @@ async def start_worker():
     setup_logging()
     logger = get_logger("aggregation-worker")
     logger.info("Aggregation Worker started")
+    try:
+        await init_mongodb()
+        logger.info("MongoDB initialized")
+    except Exception as e:
+        logger.warning("MongoDB connection failed (aggregation will retry): %s", str(e))
     interval = 60
     loop = asyncio.get_event_loop()
     stop = asyncio.Event()
 
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        try:
-            loop.add_signal_handler(sig, stop.set)
-        except NotImplementedError:
-            pass
+    for sig_name in ("SIGTERM", "SIGINT"):
+        sig = getattr(signal, sig_name, None)
+        if sig is not None:
+            try:
+                loop.add_signal_handler(sig, stop.set)
+            except NotImplementedError:
+                pass
 
     while not stop.is_set():
         try:

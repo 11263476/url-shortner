@@ -1,16 +1,25 @@
 import csv
 import io
-import zipfile
 import json
+import zipfile
+from datetime import datetime, timezone
+
 import qrcode
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import settings
+from src.core.redis import delete_url_cache
+from src.core.security import hash_password
+from src.errors import BadRequestError, FolderNotInWorkspace, NotFoundError, WorkspaceNotFound
+from src.models.tag import Tag
+from src.models.url import URL, URLStatus
+from src.repositories.folder_repository import FolderRepository
+from src.repositories.tag_repository import TagRepository
 from src.repositories.url_repository import URLRepository
 from src.repositories.workspace_repository import WorkspaceRepository
-from src.core.redis import delete_url_cache
-from src.utils.base62 import generate_short_code
-from src.models.url import URL, URLStatus
-from src.errors import WorkspaceNotFound, BadRequestError, NotFoundError
+from src.services.url_service import RESERVED_ALIASES
+from src.utils.base62 import hashid_encode
 
 
 class BulkService:
@@ -24,6 +33,29 @@ class BulkService:
         if not ws:
             raise WorkspaceNotFound()
 
+    async def _resolve_folder(self, folder_id_str: str | None, workspace_id: int) -> int | None:
+        if not folder_id_str:
+            return None
+        try:
+            fid = int(folder_id_str.strip())
+        except (ValueError, TypeError):
+            return None
+        folder_repo = FolderRepository(self.db)
+        if not await folder_repo.folder_belongs_to_workspace(fid, workspace_id):
+            raise FolderNotInWorkspace()
+        return fid
+
+    async def _resolve_tags(self, tags_str: str | None, workspace_id: int) -> list[Tag]:
+        if not tags_str:
+            return []
+        tag_repo = TagRepository(self.db)
+        names = [t.strip().lower() for t in tags_str.split(",") if t.strip()]
+        tags = []
+        for name in set(names):
+            tag = await tag_repo.get_or_create(name, workspace_id)
+            tags.append(tag)
+        return tags
+
     async def create_from_csv(self, workspace_id: int, user_id: int, contents: bytes):
         await self._verify_workspace(workspace_id, user_id)
         try:
@@ -32,26 +64,73 @@ class BulkService:
             raise BadRequestError("Invalid CSV file.")
         created, errors = [], []
         for i, row in enumerate(reader, start=2):
-            original_url = row.get("original_url", "").strip()
-            if not original_url:
-                errors.append({"row": i, "error": "Missing original_url"})
-                continue
-            custom_alias = row.get("custom_alias", "").strip() or None
-            short_code = custom_alias
-            if not short_code:
-                for _ in range(5):
-                    candidate = generate_short_code()
-                    if not await self.url_repo.alias_exists(candidate):
-                        short_code = candidate
-                        break
-            if not short_code:
-                errors.append({"row": i, "error": "Could not generate unique short code"})
-                continue
-            url = URL(short_code=short_code, original_url=original_url, user_id=user_id, workspace_id=workspace_id, custom_alias=custom_alias, status=URLStatus.active)
-            self.db.add(url)
-            created.append(short_code)
+            await self._process_row(row, i, workspace_id, user_id, errors, created)
         await self.db.commit()
         return {"created": len(created), "errors": errors, "short_codes": created}
+
+    async def _process_row(self, row: dict, row_num: int, workspace_id: int, user_id: int, errors: list, created: list) -> str | None:
+        original_url = row.get("original_url", "").strip()
+        if not original_url:
+            errors.append({"row": row_num, "error": "Missing original_url"})
+            return None
+
+        custom_alias = row.get("custom_alias", "").strip() or None
+        if custom_alias and custom_alias in RESERVED_ALIASES:
+            errors.append({"row": row_num, "error": f"Alias '{custom_alias}' is reserved"})
+            return None
+
+        short_code = custom_alias
+        if not short_code:
+            result = await self.db.execute(text("SELECT nextval('url_short_code_seq')"))
+            seq_value = result.scalar()
+            short_code = hashid_encode(seq_value, settings.SECRET_KEY)
+
+        try:
+            async with self.db.begin_nested():
+                try:
+                    folder_id = await self._resolve_folder(row.get("folder_id"), workspace_id)
+                except FolderNotInWorkspace:
+                    raise ValueError("Folder does not belong to workspace")
+
+                tags = await self._resolve_tags(row.get("tags"), workspace_id)
+
+                expires_at = None
+                exp_str = row.get("expires_at", "").strip()
+                if exp_str:
+                    try:
+                        expires_at = datetime.fromisoformat(exp_str)
+                        if expires_at.tzinfo is None:
+                            expires_at = expires_at.replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        raise ValueError(f"Invalid expires_at: {exp_str}")
+
+                password_hash = hash_password(row.get("password", "").strip()) if row.get("password", "").strip() else None
+
+                domain = row.get("domain", "").strip() or None
+
+                is_ab_test = row.get("is_ab_test", "").strip().lower() in ("true", "1", "yes")
+                is_one_time = row.get("is_one_time", "").strip().lower() in ("true", "1", "yes")
+
+                ios_url = row.get("ios_url", "").strip() or None
+                android_url = row.get("android_url", "").strip() or None
+
+                url = URL(
+                    short_code=short_code, original_url=original_url,
+                    user_id=user_id, workspace_id=workspace_id,
+                    custom_alias=custom_alias, folder_id=folder_id,
+                    domain=domain,
+                    password_hash=password_hash,
+                    expires_at=expires_at, status=URLStatus.active,
+                    is_ab_test=is_ab_test, is_one_time=is_one_time,
+                    ios_url=ios_url, android_url=android_url,
+                )
+                if tags:
+                    url.tags = tags
+                self.db.add(url)
+            created.append(short_code)
+        except Exception as e:
+            errors.append({"row": row_num, "error": str(e)})
+        return short_code
 
     async def update(self, workspace_id: int, user_id: int, url_ids: list[int], **kwargs):
         await self._verify_workspace(workspace_id, user_id)
@@ -68,7 +147,7 @@ class BulkService:
         return len(rows)
 
     async def reactivate(self, workspace_id: int, user_id: int, url_ids: list[int]):
-        from sqlalchemy import update, and_
+        from sqlalchemy import and_, update
         await self._verify_workspace(workspace_id, user_id)
         await self.db.execute(
             update(URL)
@@ -88,7 +167,8 @@ class BulkService:
 
     async def export(self, workspace_id: int, user_id: int, fmt: str):
         await self._verify_workspace(workspace_id, user_id)
-        urls = await self.url_repo.get_workspace_urls(workspace_id)
+        result = await self.url_repo.get_workspace_urls(workspace_id)
+        urls = result["items"]
         data = [
             {
                 "id": u.id, "short_code": u.short_code, "original_url": u.original_url,
@@ -110,7 +190,8 @@ class BulkService:
 
     async def generate_qr_zip(self, workspace_id: int, user_id: int, url_ids: list[int] | None):
         await self._verify_workspace(workspace_id, user_id)
-        urls = await self.url_repo.get_workspace_urls(workspace_id)
+        result = await self.url_repo.get_workspace_urls(workspace_id)
+        urls = result["items"]
         if url_ids:
             urls = [u for u in urls if u.id in url_ids]
         if not urls:
@@ -119,7 +200,8 @@ class BulkService:
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
             for u in urls:
                 qr = qrcode.QRCode(version=1, box_size=10, border=4)
-                qr.add_data(f"http://localhost:8000/{u.short_code}")
+                base = settings.FRONTEND_URL or "http://localhost:3000"
+                qr.add_data(f"{base}/{u.short_code}")
                 qr.make(fit=True)
                 img = qr.make_image(fill_color="black", back_color="white")
                 buf = io.BytesIO()

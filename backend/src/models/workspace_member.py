@@ -1,8 +1,10 @@
-from sqlalchemy import String, ForeignKey, Enum, UniqueConstraint, DateTime
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from src.models.base import Base
-from datetime import datetime
 import enum
+from datetime import datetime, timezone
+
+from sqlalchemy import DateTime, Enum, ForeignKey, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from src.models.base import Base
 
 
 class MemberRole(str, enum.Enum):
@@ -18,7 +20,7 @@ class WorkspaceMember(Base):
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     role: Mapped[MemberRole] = mapped_column(Enum(MemberRole), default=MemberRole.editor)
-    joined_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         UniqueConstraint("workspace_id", "user_id", name="uq_workspace_member"),

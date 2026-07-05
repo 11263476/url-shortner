@@ -1,7 +1,9 @@
-from pydantic import BaseModel, EmailStr, ConfigDict, Field
 from datetime import datetime
-from src.models.user import RoleEnum, PlanEnum
 from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+from src.models.user import PlanEnum, RoleEnum
 
 
 class UserCreate(BaseModel):
@@ -24,6 +26,8 @@ class UserResponse(BaseModel):
     is_verified: bool
     role: RoleEnum
     plan: PlanEnum
+    is_superadmin: bool
+    avatar_url: str | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

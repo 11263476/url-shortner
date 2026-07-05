@@ -1,30 +1,37 @@
-import time
+import logging
 import secrets
-from datetime import datetime
+import time
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from src.repositories.user_repository import UserRepository
-from src.repositories.workspace_repository import WorkspaceRepository
 from jose import JWTError
+
+from src.core.redis import redis_client
 from src.core.security import (
-    hash_password,
-    verify_password,
     create_access_token,
-    create_refresh_token,
-    decode_token,
     create_email_verification_token,
     create_password_reset_token,
+    create_refresh_token,
+    decode_token,
+    hash_password,
+    verify_password,
 )
-from src.core.redis import redis_client
-from src.core.config import settings
+from src.errors import (
+    CSRFValidationFailed,
+    EmailAlreadyExists,
+    InvalidCredentials,
+    InvalidResetToken,
+    InvalidToken,
+    InvalidVerifyToken,
+    OAuthFailed,
+    OAuthNotConfigured,
+    TokenRevoked,
+    UserNotFound,
+)
+from src.repositories.user_repository import UserRepository
+from src.repositories.workspace_repository import WorkspaceRepository
 from src.schemas.user import Token
 from src.services.email_service import EmailService
-from src.errors import (
-    EmailAlreadyExists, InvalidCredentials, InvalidToken, TokenRevoked,
-    UserNotFound, InvalidResetToken, InvalidVerifyToken,
-    OAuthNotConfigured, CSRFValidationFailed, OAuthFailed,
-)
+
+logger = logging.getLogger("url-shortener")
 
 
 class AuthService:
@@ -146,30 +153,33 @@ class AuthService:
         if not user_info:
             raise OAuthFailed(provider)
 
-        user = await self.user_repo.get_by_email(user_info["email"])
-        if not user:
-            user = await self.user_repo.create(
-                email=user_info["email"],
-                password_hash=hash_password(secrets.token_urlsafe(32)),
-                google_id=user_info["id"] if provider == "google" else None,
-                oauth_provider=provider,
-                oauth_avatar_url=user_info.get("picture"),
-                is_verified=user_info.get("verified_email", False),
-            )
-            await self.workspace_repo.create_default(user.id)
-        else:
-            update_fields = {}
-            provider_id_attr = f"{provider}_id"
-            if provider == "google" and not user.google_id:
-                update_fields["google_id"] = user_info["id"]
-            if not user.oauth_provider:
-                update_fields["oauth_provider"] = provider
-                update_fields["oauth_avatar_url"] = user_info.get("picture")
-                if user_info.get("verified_email"):
-                    update_fields["is_verified"] = True
-            if update_fields:
-                await self.user_repo.update(user.id, **update_fields)
+        try:
+            user = await self.user_repo.get_by_email(user_info["email"])
+            if not user:
+                user = await self.user_repo.create(
+                    email=user_info["email"],
+                    password_hash=hash_password(secrets.token_urlsafe(32)),
+                    google_id=user_info["id"] if provider == "google" else None,
+                    oauth_provider=provider,
+                    oauth_avatar_url=user_info.get("picture"),
+                    is_verified=user_info.get("verified_email", False),
+                )
+                await self.workspace_repo.create_default(user.id)
+            else:
+                update_fields = {}
+                if provider == "google" and not user.google_id:
+                    update_fields["google_id"] = user_info["id"]
+                if not user.oauth_provider:
+                    update_fields["oauth_provider"] = provider
+                    update_fields["oauth_avatar_url"] = user_info.get("picture")
+                    if user_info.get("verified_email"):
+                        update_fields["is_verified"] = True
+                if update_fields:
+                    await self.user_repo.update(user.id, **update_fields)
 
-        access_token = create_access_token(data={"sub": str(user.id)})
-        refresh_token = create_refresh_token(data={"sub": str(user.id)})
-        return Token(access_token=access_token, token_type="bearer", refresh_token=refresh_token)
+            access_token = create_access_token(data={"sub": str(user.id)})
+            refresh_token = create_refresh_token(data={"sub": str(user.id)})
+            return Token(access_token=access_token, token_type="bearer", refresh_token=refresh_token)
+        except Exception as e:
+            logger.error(f"OAuth callback error for {provider}: {e}", exc_info=True)
+            raise

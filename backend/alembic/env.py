@@ -1,6 +1,6 @@
 import asyncio
-import sys
 import os
+import sys
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -22,9 +22,24 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Import all models so Alembic can discover them for autogenerate
-from src.models.base import Base
-from src.models import User, Workspace, Folder, Tag, UrlTag, URL, Favorite, WorkspaceMember, WorkspaceInvite, AuditLog, Webhook, WebhookEvent, URLAnalyticsSummary, APIKey  # noqa: F401
 from src.core.config import settings
+from src.models import (  # noqa: F401
+    URL,
+    APIKey,
+    AuditLog,
+    Favorite,
+    Folder,
+    Tag,
+    URLAnalyticsSummary,
+    UrlTag,
+    User,
+    Webhook,
+    WebhookEvent,
+    Workspace,
+    WorkspaceInvite,
+    WorkspaceMember,
+)
+from src.models.base import Base
 
 target_metadata = Base.metadata
 

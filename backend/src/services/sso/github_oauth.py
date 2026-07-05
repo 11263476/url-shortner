@@ -1,5 +1,6 @@
-import httpx
 from urllib.parse import urlencode
+
+import httpx
 
 from src.core.config import settings
 

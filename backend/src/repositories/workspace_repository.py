@@ -1,8 +1,8 @@
-from sqlalchemy import select, and_, or_
+from sqlalchemy import and_, select
 
-from src.repositories.base import BaseRepository
 from src.models.workspace import Workspace
 from src.models.workspace_member import WorkspaceMember
+from src.repositories.base import BaseRepository
 
 
 class WorkspaceRepository(BaseRepository[Workspace]):
@@ -44,4 +44,9 @@ class WorkspaceRepository(BaseRepository[Workspace]):
         return None
 
     async def create_default(self, user_id: int) -> Workspace:
-        return await self.create(name="Personal Workspace", owner_id=user_id)
+        ws = await self.create(name="Personal Workspace", owner_id=user_id)
+        from src.models.workspace_member import MemberRole
+        from src.repositories.workspace_member_repository import WorkspaceMemberRepository
+        member_repo = WorkspaceMemberRepository(self.db)
+        await member_repo.add_member(ws.id, user_id, MemberRole.admin)
+        return ws

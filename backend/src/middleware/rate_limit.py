@@ -1,9 +1,9 @@
-from fastapi import Request, HTTPException, status
-from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi import HTTPException, Request, status
 from jose import JWTError
+from starlette.middleware.base import BaseHTTPMiddleware
 
-from src.core.redis import check_rate_limit
 from src.core.config import settings
+from src.core.redis import check_rate_limit
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -25,11 +25,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 from jose import jwt as jose_jwt
                 payload = jose_jwt.decode(auth_header[7:], settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
                 user_id = payload.get("sub")
+                plan = payload.get("plan", "free")
             except JWTError:
                 pass
 
         if user_id:
-            if plan == "premium":
+            if plan in ("premium", "enterprise"):
                 cap, refill = settings.RATE_LIMIT_USER_PREMIUM_CAPACITY, settings.RATE_LIMIT_USER_PREMIUM_REFILL
             else:
                 cap, refill = settings.RATE_LIMIT_USER_FREE_CAPACITY, settings.RATE_LIMIT_USER_FREE_REFILL

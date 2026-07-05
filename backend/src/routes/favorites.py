@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, status, Query
 from typing import List
 
-from src.core.deps import get_current_user, get_favorite_service, PaginationParams
+from fastapi import APIRouter, Depends, status
+
+from src.core.deps import PaginationParams, get_current_user, get_favorite_service
 from src.models.user import User
 from src.schemas.favorite import FavoriteCreate, FavoriteResponse
 from src.services.favorite_service import FavoriteService
@@ -9,13 +10,13 @@ from src.services.favorite_service import FavoriteService
 router = APIRouter(prefix="/favorites", tags=["Favorites"])
 
 
-@router.post("/", response_model=FavoriteResponse, status_code=status.HTTP_201_CREATED,
+@router.post("", response_model=FavoriteResponse, status_code=status.HTTP_201_CREATED,
     summary="Add URL to favorites")
 async def add_favorite(payload: FavoriteCreate, current_user: User = Depends(get_current_user), svc: FavoriteService = Depends(get_favorite_service)):
     return await svc.add(payload.url_id, current_user.id)
 
 
-@router.get("/", response_model=List[FavoriteResponse],
+@router.get("", response_model=List[FavoriteResponse],
     summary="List favorites",
     description="Returns paginated list of the current user's favorite URLs.")
 async def list_favorites(

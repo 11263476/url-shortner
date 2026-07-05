@@ -1,18 +1,55 @@
-import redis.asyncio as aioredis
-from src.core.config import settings
-import time
 import json
+import time
 
-redis_client: aioredis.Redis = aioredis.from_url(
-    settings.REDIS_URL,
-    decode_responses=True,
+from upstash_redis.asyncio import Redis as UpstashRedis
+
+from src.core.config import settings
+
+
+class UpstashRedisAdapter:
+    def __init__(self, url: str, token: str):
+        self._client = UpstashRedis(url=url, token=token)
+
+    async def ping(self):
+        return await self._client.ping()
+
+    async def get(self, key: str):
+        return await self._client.get(key)
+
+    async def setex(self, key: str, ttl: int, value: str):
+        return await self._client.set(key, value, ex=ttl)
+
+    async def delete(self, key: str):
+        return await self._client.delete(key)
+
+    async def incr(self, key: str):
+        return await self._client.incr(key)
+
+    async def expire(self, key: str, ttl: int):
+        return await self._client.expire(key, ttl)
+
+    async def eval(self, script: str, numkeys: int, *args):
+        cmd = ["EVAL", script, str(numkeys)] + list(args)
+        return await self._client.execute(cmd)
+
+
+redis_client: UpstashRedisAdapter = UpstashRedisAdapter(
+    url=settings.UPSTASH_REDIS_REST_URL or "",
+    token=settings.UPSTASH_REDIS_REST_TOKEN or "",
 )
+
 
 async def init_redis():
     """Verify that Redis is connected on startup."""
-    await redis_client.ping()
+    try:
+        await redis_client.ping()
+        print("[REDIS] Redis (Upstash REST) connected successfully.")
+    except Exception as e:
+        print(f"[REDIS] Redis ping failed: {e}")
+        raise
+    return redis_client
 
-# Token Bucket Lua Script
+
 TOKEN_BUCKET_LUA = """
 local key = KEYS[1]
 local capacity = tonumber(ARGV[1])
@@ -45,13 +82,10 @@ end
 """
 
 async def check_rate_limit(key: str, capacity: int, refill_rate_per_sec: float) -> bool:
-    """
-    Returns True if rate limited (limit exceeded), False if request is allowed.
-    """
     now = time.time()
     result = await redis_client.eval(
         TOKEN_BUCKET_LUA,
-        1,  # Number of keys
+        1,
         key,
         str(capacity),
         str(refill_rate_per_sec),
@@ -61,7 +95,6 @@ async def check_rate_limit(key: str, capacity: int, refill_rate_per_sec: float) 
     return result == 0
 
 async def get_url_cache(short_code: str) -> dict | None:
-    """Retrieve URL from Redis cache."""
     data = await redis_client.get(f"url:{short_code}")
     if data:
         try:
@@ -71,9 +104,7 @@ async def get_url_cache(short_code: str) -> dict | None:
     return None
 
 async def set_url_cache(short_code: str, url_data: dict, ttl: int = 86400) -> None:
-    """Store URL in Redis cache."""
     await redis_client.setex(f"url:{short_code}", ttl, json.dumps(url_data))
 
 async def delete_url_cache(short_code: str) -> None:
-    """Invalidate URL cache."""
     await redis_client.delete(f"url:{short_code}")

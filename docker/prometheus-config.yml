@@ -6,6 +6,13 @@ global:
     cluster: 'url-shortener'
     environment: 'development'
 
+# remote_write disabled for local dev - use Grafana Cloud Metrics Endpoint integration for production
+# remote_write:
+#   - url: "https://prometheus-prod-43-prod-ap-south-1.grafana.net/api/prom/push"
+#     basic_auth:
+#       username: "3291100"
+#       password: "YOUR_API_TOKEN"
+
 scrape_configs:
   # Prometheus scrapes itself
   - job_name: 'prometheus'

@@ -1,10 +1,10 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.repositories.user_repository import UserRepository
-from src.repositories.url_repository import URLRepository
-from src.repositories.workspace_repository import WorkspaceRepository
 from src.models.url import URLStatus
+from src.repositories.url_repository import URLRepository
+from src.repositories.user_repository import UserRepository
+from src.repositories.workspace_repository import WorkspaceRepository
 
 
 @pytest.mark.asyncio
@@ -56,9 +56,9 @@ async def test_url_repo_alias_exists(db: AsyncSession, test_url):
 @pytest.mark.asyncio
 async def test_url_repo_get_workspace_urls(db: AsyncSession, test_url):
     repo = URLRepository(db)
-    urls = await repo.get_workspace_urls(workspace_id=test_url.workspace_id, user_id=test_url.user_id)
-    assert len(urls) >= 1
-    assert urls[0].id == test_url.id
+    result = await repo.get_workspace_urls(workspace_id=test_url.workspace_id, user_id=test_url.user_id)
+    assert len(result["items"]) >= 1
+    assert result["items"][0].id == test_url.id
 
 
 @pytest.mark.asyncio
@@ -89,5 +89,5 @@ async def test_workspace_repo_get_user_workspaces(db: AsyncSession, test_user, t
 async def test_workspace_repo_create_default(db: AsyncSession, test_user):
     repo = WorkspaceRepository(db)
     ws = await repo.create_default(test_user.id)
-    assert ws.name == "Default Workspace"
+    assert ws.name == "Personal Workspace"
     assert ws.owner_id == test_user.id

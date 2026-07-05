@@ -1,7 +1,8 @@
-from sqlalchemy import select, and_, delete
+from sqlalchemy import and_, delete, select
+from sqlalchemy.orm import selectinload
 
+from src.models.workspace_member import MemberRole, WorkspaceMember
 from src.repositories.base import BaseRepository
-from src.models.workspace_member import WorkspaceMember, MemberRole
 
 
 class WorkspaceMemberRepository(BaseRepository[WorkspaceMember]):
@@ -12,7 +13,9 @@ class WorkspaceMemberRepository(BaseRepository[WorkspaceMember]):
         return await self.get_by(workspace_id=workspace_id, user_id=user_id)
 
     async def get_workspace_members(self, workspace_id: int) -> list[WorkspaceMember]:
-        return await self.get_many(workspace_id=workspace_id)
+        stmt = select(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace_id).options(selectinload(WorkspaceMember.user))
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
 
     async def is_member(self, workspace_id: int, user_id: int) -> bool:
         return await self.get_member(workspace_id, user_id) is not None

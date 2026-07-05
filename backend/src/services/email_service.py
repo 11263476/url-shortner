@@ -1,8 +1,9 @@
 import smtplib
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
 from src.core.config import settings
-from src.logging import get_logger
+from src.log_utils import get_logger
 
 
 class EmailService:
@@ -39,6 +40,19 @@ class EmailService:
         <p><a href="{reset_url}">{reset_url}</a></p>
         <p>This link expires in 1 hour.</p>
         <p>If you didn't request this, you can safely ignore this email.</p>
+        """
+        await cls._send(email, subject, html)
+
+    @classmethod
+    async def send_invite_email(cls, workspace_name: str, role: str, email: str, token: str) -> None:
+        accept_url = f"{settings.FRONTEND_URL or 'http://localhost:3000'}/workspaces?invite_token={token}"
+        subject = f"You've been invited to {workspace_name} — LinkForge"
+        html = f"""
+        <h2>Workspace Invitation</h2>
+        <p>You've been invited to <strong>{workspace_name}</strong> as <strong>{role}</strong>.</p>
+        <p><a href="{accept_url}">Accept Invitation</a></p>
+        <p>Or copy this link: {accept_url}</p>
+        <p>This invitation expires in 7 days.</p>
         """
         await cls._send(email, subject, html)
 

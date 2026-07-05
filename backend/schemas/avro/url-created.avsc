@@ -1,0 +1,15 @@
+{
+  "namespace": "com.linkforge.analytics",
+  "type": "record",
+  "name": "UrlCreated",
+  "fields": [
+    {"name": "short_code", "type": "string"},
+    {"name": "original_url", "type": "string"},
+    {"name": "workspace_id", "type": "int"},
+    {"name": "user_id", "type": "int"},
+    {"name": "title", "type": ["null", "string"], "default": null},
+    {"name": "description", "type": ["null", "string"], "default": null},
+    {"name": "tags", "type": {"type": "array", "items": "string"}, "default": []},
+    {"name": "base_url", "type": "string"}
+  ]
+}

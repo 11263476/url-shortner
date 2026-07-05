@@ -3,16 +3,14 @@ Prometheus metrics collection and tracking.
 Defines all metrics used throughout the application.
 """
 
-from opentelemetry import metrics
-from opentelemetry.metrics import Histogram, Counter, UpDownCounter, Gauge
-import time
 
-from src.core.config import settings
+from opentelemetry import metrics
+from opentelemetry.metrics import Counter, Histogram, UpDownCounter
 
 
 class URLShortenerMetrics:
     """Collection of all application metrics."""
-    
+
     # Counters (monotonically increasing)
     http_requests_total: Counter
     http_request_errors_total: Counter
@@ -24,115 +22,113 @@ class URLShortenerMetrics:
     analytics_events_processed_total: Counter
     kafka_messages_produced_total: Counter
     kafka_messages_consumed_total: Counter
-    
+
     # Histograms (distribution tracking)
     http_request_duration_seconds: Histogram
     database_query_duration_seconds: Histogram
     cache_lookup_duration_seconds: Histogram
     kafka_latency_seconds: Histogram
-    
+
     # Gauges (current value)
     active_workers: UpDownCounter
-    pending_events_queue_depth: Gauge
-    cache_memory_bytes: Gauge
-    
+
     def __init__(self):
         """Initialize all metrics."""
         meter = metrics.get_meter("url-shortener")
-        
+
         # --- Counters ---
         self.http_requests_total = meter.create_counter(
             name="http_requests_total",
             description="Total HTTP requests",
             unit="1",
         )
-        
+
         self.http_request_errors_total = meter.create_counter(
             name="http_request_errors_total",
             description="Total HTTP request errors",
             unit="1",
         )
-        
+
         self.url_creation_total = meter.create_counter(
             name="url_creation_total",
             description="Total URLs created",
             unit="1",
         )
-        
+
         self.url_redirects_total = meter.create_counter(
             name="url_redirects_total",
             description="Total URL redirects (clicks)",
             unit="1",
         )
-        
+
         self.cache_hits_total = meter.create_counter(
             name="cache_hits_total",
             description="Total Redis cache hits",
             unit="1",
         )
-        
+
         self.cache_misses_total = meter.create_counter(
             name="cache_misses_total",
             description="Total Redis cache misses",
             unit="1",
         )
-        
+
         self.api_key_requests_total = meter.create_counter(
             name="api_key_requests_total",
             description="Total API key authenticated requests",
             unit="1",
         )
-        
+
         self.analytics_events_processed_total = meter.create_counter(
             name="analytics_events_processed_total",
             description="Total analytics events processed",
             unit="1",
         )
-        
+
         self.kafka_messages_produced_total = meter.create_counter(
             name="kafka_messages_produced_total",
             description="Total Kafka messages produced",
             unit="1",
         )
-        
+
         self.kafka_messages_consumed_total = meter.create_counter(
             name="kafka_messages_consumed_total",
             description="Total Kafka messages consumed",
             unit="1",
         )
-        
+
         # --- Histograms ---
         self.http_request_duration_seconds = meter.create_histogram(
             name="http_request_duration_seconds",
             description="HTTP request duration in seconds",
             unit="s",
         )
-        
+
         self.database_query_duration_seconds = meter.create_histogram(
             name="database_query_duration_seconds",
             description="Database query duration in seconds",
             unit="s",
         )
-        
+
         self.cache_lookup_duration_seconds = meter.create_histogram(
             name="cache_lookup_duration_seconds",
             description="Redis cache lookup duration in seconds",
             unit="s",
         )
-        
+
         self.kafka_latency_seconds = meter.create_histogram(
             name="kafka_latency_seconds",
             description="Kafka message end-to-end latency in seconds",
             unit="s",
         )
-        
+
         # --- Up/Down Counters (Gauges) ---
         self.active_workers = meter.create_up_down_counter(
             name="active_workers",
             description="Number of active worker processes",
             unit="1",
         )
-        
+
         self.pending_events_queue_depth = meter.create_observable_gauge(
             name="pending_events_queue_depth",
             description="Number of pending events in queue",

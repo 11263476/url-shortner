@@ -1,7 +1,9 @@
 import enum
-from datetime import datetime
-from sqlalchemy import String, Boolean, ForeignKey, DateTime, Enum, Integer
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from datetime import datetime, timezone
+
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, backref, mapped_column, relationship
+
 from src.models.base import Base
 
 
@@ -24,9 +26,9 @@ class APIKey(Base):
     # Quota tracking — reset daily via Redis
     daily_requests_used: Mapped[int] = mapped_column(Integer, default=0)
 
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Relationships
-    user = relationship("User", backref="api_keys")
+    user = relationship("User", backref=backref("api_keys", passive_deletes=True))

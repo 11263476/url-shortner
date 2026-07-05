@@ -1,13 +1,11 @@
 import secrets
 from datetime import datetime, timedelta
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
+from src.core.api_key_auth import APIKeyQuotaManager
+from src.core.security import hash_password
+from src.errors import NotFoundError
 from src.repositories.api_key_repository import APIKeyRepository
 from src.repositories.user_repository import UserRepository
-from src.core.security import hash_password, decode_token
-from src.core.api_key_auth import APIKeyQuotaManager
-from src.errors import NotFoundError
 
 
 class APIKeyService:

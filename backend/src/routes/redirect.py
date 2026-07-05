@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, Header, Request, BackgroundTasks
-from fastapi.responses import RedirectResponse, HTMLResponse
 from typing import Optional
 
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Header, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+
 from src.core.deps import get_redirect_service
+from src.errors import RateLimitError, URLDisabled, URLExpired, URLNotFound, URLPasswordIncorrect
 from src.services.redirect_service import RedirectService
-from src.errors import URLNotFound, URLDisabled, URLExpired, URLPasswordIncorrect
 
 router = APIRouter(tags=["Redirection"])
 
@@ -59,7 +60,7 @@ PASSWORD_PROTECTION_HTML = """
     <div class="card">
         <h1>Link is Protected</h1>
         <p>This link requires a password to access.</p>
-        <form method="GET">
+        <form method="POST">
             <input type="password" name="pwd" placeholder="Enter password" required autofocus>
             <button type="submit">Unlock & Redirect</button>
         </form>
@@ -70,22 +71,14 @@ PASSWORD_PROTECTION_HTML = """
 """
 
 
-@router.get("/{short_code}",
-    summary="Redirect short URL",
-    description="Resolves a short code and redirects to the original URL. Supports password protection and A/B testing.",
-    response_description="302 redirect to destination URL, or password-protected HTML page")
-async def redirect_to_url(
+async def _resolve_and_redirect(
     short_code: str,
-    request: Request,
-    background_tasks: BackgroundTasks,
-    pwd: Optional[str] = None,
-    user_agent: Optional[str] = Header(None),
-    referer: Optional[str] = Header(None),
-    svc: RedirectService = Depends(get_redirect_service),
+    ip: str,
+    user_agent: Optional[str],
+    referer: Optional[str],
+    pwd: Optional[str],
+    svc: RedirectService,
 ):
-    x_forwarded_for = request.headers.get("X-Forwarded-For")
-    ip = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else request.client.host
-
     try:
         result = await svc.resolve(short_code, ip, user_agent, referer, pwd)
         return RedirectResponse(url=result.destination, status_code=302)
@@ -98,3 +91,41 @@ async def redirect_to_url(
         return HTMLResponse(content="<h1>403 - This URL has been disabled</h1>", status_code=403)
     except URLExpired:
         return HTMLResponse(content="<h1>410 - This URL has expired</h1>", status_code=410)
+    except RateLimitError:
+        return HTMLResponse(content="<h1>429 - Too many requests. Please try again later.</h1>", status_code=429)
+
+
+@router.get("/{short_code}",
+    summary="Redirect short URL",
+    description="Resolves a short code and redirects to the original URL. Supports password protection and A/B testing.",
+    response_description="302 redirect to destination URL, or password-protected HTML page")
+async def redirect_to_url(
+    short_code: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user_agent: Optional[str] = Header(None),
+    referer: Optional[str] = Header(None),
+    svc: RedirectService = Depends(get_redirect_service),
+):
+    x_forwarded_for = request.headers.get("X-Forwarded-For")
+    ip = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else request.client.host
+
+    return await _resolve_and_redirect(short_code, ip, user_agent, referer, None, svc)
+
+
+@router.post("/{short_code}",
+    summary="Submit password for protected short URL",
+    include_in_schema=False)
+async def redirect_with_password(
+    short_code: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    pwd: str = Form(...),
+    user_agent: Optional[str] = Header(None),
+    referer: Optional[str] = Header(None),
+    svc: RedirectService = Depends(get_redirect_service),
+):
+    x_forwarded_for = request.headers.get("X-Forwarded-For")
+    ip = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else request.client.host
+
+    return await _resolve_and_redirect(short_code, ip, user_agent, referer, pwd, svc)

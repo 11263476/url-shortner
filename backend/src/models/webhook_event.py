@@ -1,7 +1,9 @@
-from sqlalchemy import String, ForeignKey, Boolean, DateTime, Text, Integer
+from datetime import datetime, timezone
+
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
+
 from src.models.base import Base
-from datetime import datetime
 
 
 class WebhookEvent(Base):
@@ -15,4 +17,4 @@ class WebhookEvent(Base):
     response_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

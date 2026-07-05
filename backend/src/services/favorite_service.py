@@ -1,8 +1,8 @@
-from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.errors import ConflictError, NotFoundError, URLNotFound
+from src.models.url import URLStatus
 from src.repositories.favorite_repository import FavoriteRepository
 from src.repositories.url_repository import URLRepository
-from src.errors import URLNotFound, NotFoundError, ConflictError
 
 
 class FavoriteService:
@@ -12,7 +12,7 @@ class FavoriteService:
 
     async def add(self, url_id: int, user_id: int):
         url = await self.url_repo.get(url_id)
-        if not url or url.status.name == "deleted":
+        if not url or url.status == URLStatus.deleted:
             raise URLNotFound()
         if await self.repo.is_favorited(user_id, url_id):
             raise ConflictError("URL already favorited.")

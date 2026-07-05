@@ -1,20 +1,30 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timedelta
 import secrets
+from datetime import datetime, timedelta
 
-from src.repositories.workspace_repository import WorkspaceRepository
-from src.repositories.workspace_member_repository import WorkspaceMemberRepository
-from src.repositories.workspace_invite_repository import WorkspaceInviteRepository
-from src.repositories.user_repository import UserRepository
-from src.models.workspace_member import MemberRole
-from src.services.audit_service import AuditService
-from src.services.webhook_service import WebhookService
 from src.errors import (
-    WorkspaceNotFound, OnlyAdminCanInvite, PendingInviteExists,
-    CannotInviteOwner, AlreadyMember, InviteNotFound, InviteExpired,
-    InviteEmailMismatch, CannotRemoveOwner, OnlyOwnerCanChangeRoles,
-    MemberNotFound, BadRequestError,
+    AlreadyMember,
+    BadRequestError,
+    CannotInviteOwner,
+    CannotRemoveOwner,
+    ForbiddenError,
+    InviteEmailMismatch,
+    InviteExpired,
+    InviteNotFound,
+    MemberNotFound,
+    OnlyAdminCanInvite,
+    OnlyOwnerCanChangeRoles,
+    PendingInviteExists,
+    WorkspaceNotFound,
 )
+from src.models.workspace_invite import InviteStatus
+from src.models.workspace_member import MemberRole
+from src.repositories.user_repository import UserRepository
+from src.repositories.workspace_invite_repository import WorkspaceInviteRepository
+from src.repositories.workspace_member_repository import WorkspaceMemberRepository
+from src.repositories.workspace_repository import WorkspaceRepository
+from src.services.audit_service import AuditService
+from src.services.email_service import EmailService
+from src.services.webhook_service import WebhookService
 
 
 class WorkspaceService:
@@ -90,13 +100,15 @@ class WorkspaceService:
             "workspace_id": workspace_id, "email": email, "role": role, "invited_by": invited_by,
         })
 
+        await EmailService.send_invite_email(ws.name, role, email, token)
+
         return invite
 
     async def accept_invite(self, token: str, user_id: int):
         invite = await self.invite_repo.get_by_token(token)
         if not invite:
             raise InviteNotFound()
-        if invite.status.name != "pending":
+        if invite.status != InviteStatus.pending:
             raise BadRequestError("Invite is no longer valid.")
         if invite.expires_at < datetime.utcnow():
             await self.invite_repo.update(invite.id, status="expired")
@@ -108,6 +120,8 @@ class WorkspaceService:
             raise AlreadyMember()
         await self.member_repo.add_member(invite.workspace_id, user_id, MemberRole(invite.role))
         await self.invite_repo.accept(token)
+        if not user.is_verified:
+            await self.user_repo.update(user.id, is_verified=True)
         await self.audit.log(
             actor_id=user_id, action="accept_invite", resource_type="workspace_member",
             resource_id=user_id, after={"workspace_id": invite.workspace_id, "role": invite.role},
@@ -130,6 +144,10 @@ class WorkspaceService:
         ws = await self.repo.verify_access(workspace_id, user_id)
         if not ws:
             raise WorkspaceNotFound()
+        if ws.owner_id != user_id:
+            member = await self.member_repo.get_member(workspace_id, user_id)
+            if not member or member.role != MemberRole.admin:
+                raise ForbiddenError("Only admins can cancel invites.")
         await self.invite_repo.cancel(invite_id)
         await self.audit.log(
             actor_id=user_id, action="cancel_invite", resource_type="workspace_invite",
@@ -140,12 +158,27 @@ class WorkspaceService:
         ws = await self.repo.verify_access(workspace_id, user_id)
         if not ws:
             raise WorkspaceNotFound()
-        return await self.member_repo.get_workspace_members(workspace_id)
+        members = await self.member_repo.get_workspace_members(workspace_id)
+        result = []
+        for m in members:
+            u = m.user
+            result.append({
+                "id": m.id,
+                "user_id": m.user_id,
+                "email": u.email if u else None,
+                "role": m.role,
+                "joined_at": m.joined_at,
+            })
+        return result
 
     async def remove_member(self, workspace_id: int, member_id: int, user_id: int):
         ws = await self.repo.verify_access(workspace_id, user_id)
         if not ws:
             raise WorkspaceNotFound()
+        if ws.owner_id != user_id:
+            member = await self.member_repo.get_member(workspace_id, user_id)
+            if not member or member.role != MemberRole.admin:
+                raise ForbiddenError("Only admins can remove members.")
         member = await self.member_repo.get(member_id)
         if not member or member.workspace_id != workspace_id:
             raise MemberNotFound()
@@ -155,6 +188,33 @@ class WorkspaceService:
         await self.audit.log(
             actor_id=user_id, action="remove_member", resource_type="workspace_member",
             resource_id=member.user_id, workspace_id=workspace_id,
+        )
+
+    async def rename(self, workspace_id: int, name: str, user_id: int):
+        ws = await self.repo.verify_access(workspace_id, user_id)
+        if not ws:
+            raise WorkspaceNotFound()
+        if ws.owner_id != user_id:
+            raise OnlyOwnerCanChangeRoles()
+        before = {"name": ws.name}
+        ws = await self.repo.update(workspace_id, name=name)
+        await self.audit.log(
+            actor_id=user_id, action="rename", resource_type="workspace",
+            resource_id=workspace_id, before=before, after={"name": name},
+            workspace_id=workspace_id,
+        )
+        return ws
+
+    async def delete(self, workspace_id: int, user_id: int):
+        ws = await self.repo.get(workspace_id)
+        if not ws:
+            raise WorkspaceNotFound()
+        if ws.owner_id != user_id:
+            raise OnlyOwnerCanChangeRoles()
+        await self.repo.delete(workspace_id)
+        await self.audit.log(
+            actor_id=user_id, action="delete", resource_type="workspace",
+            resource_id=workspace_id, before={"name": ws.name},
         )
 
     async def update_member_role(self, workspace_id: int, member_id: int, role: MemberRole, user_id: int):

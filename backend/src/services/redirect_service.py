@@ -1,14 +1,17 @@
-from datetime import datetime
-from typing import Optional
+import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Optional
 
+from src.core.redis import check_rate_limit, delete_url_cache, get_url_cache, set_url_cache
+from src.core.security import verify_password
+from src.errors.common import RateLimitError
+from src.errors.url import URLDisabled, URLExpired, URLNotFound, URLPasswordIncorrect
+from src.events.dispatcher import EventDispatcher
 from src.repositories.url_repository import URLRepository
 from src.repositories.workspace_repository import WorkspaceRepository
-from src.core.security import verify_password
-from src.core.redis import get_url_cache, set_url_cache, delete_url_cache, check_rate_limit
-from src.events.dispatcher import EventDispatcher
-from src.errors.url import URLNotFound, URLDisabled, URLExpired, URLPasswordIncorrect
-from src.errors.common import RateLimitError
+from src.services.geo_service import GeoService
+from src.services.utm_service import parse_utm
 
 
 @dataclass
@@ -25,6 +28,7 @@ class RedirectService:
         self.url_repo = url_repo
         self.workspace_repo = workspace_repo
         self.events = events
+        self.geo = GeoService()
 
     async def resolve(
         self,
@@ -44,15 +48,23 @@ class RedirectService:
         destination = self._apply_deep_link(url_data, user_agent)
         await self._handle_one_time(url_data)
 
+        geo = await self.geo.resolve(ip)
+        utm = parse_utm(url_data["original_url"])
+
         await self.events.dispatch("url-clicked", {
-            "event_id": None,
+            "event_id": str(uuid.uuid4()),
             "short_code": short_code,
             "original_url": destination,
             "workspace_id": url_data["workspace_id"],
             "ip_address": ip,
             "user_agent": user_agent,
             "referer": referer,
-            "clicked_at": datetime.utcnow().isoformat(),
+            "country": geo.get("country"),
+            "city": geo.get("city"),
+            "utm_source": utm.get("utm_source"),
+            "utm_medium": utm.get("utm_medium"),
+            "utm_campaign": utm.get("utm_campaign"),
+            "clicked_at": datetime.now(timezone.utc).isoformat(),
         }, key=short_code)
 
         return RedirectResult(
@@ -91,7 +103,9 @@ class RedirectService:
             raise URLDisabled()
         if url_data["expires_at"]:
             expires_at = datetime.fromisoformat(url_data["expires_at"])
-            if expires_at < datetime.utcnow():
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at < datetime.now(timezone.utc):
                 raise URLExpired()
 
     def _check_password(self, url_data: dict, pwd: Optional[str]):

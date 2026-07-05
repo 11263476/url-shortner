@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, status
 from typing import List
+
+from fastapi import APIRouter, Depends, status
 
 from src.core.deps import get_current_user, get_webhook_service
 from src.models.user import User
-from src.schemas.webhook import WebhookCreate, WebhookUpdate, WebhookResponse
+from src.schemas.webhook import WebhookCreate, WebhookResponse, WebhookUpdate
 from src.services.webhook_service import WebhookService
 
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])

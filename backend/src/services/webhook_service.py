@@ -1,18 +1,16 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-import json
-import httpx
-import hmac
-import hashlib
 import base64
+import hashlib
+import hmac
+import json
+
+import httpx
 from cryptography.fernet import Fernet
+from sqlalchemy.ext.asyncio import AsyncSession
 
-
+from src.errors import NotFoundError, WorkspaceNotFound
+from src.models.webhook_event import WebhookEvent
 from src.repositories.webhook_repository import WebhookRepository
 from src.repositories.workspace_repository import WorkspaceRepository
-from src.models.webhook import Webhook
-from src.models.webhook_event import WebhookEvent
-from src.errors import WorkspaceNotFound, NotFoundError
 
 
 def _fernet() -> Fernet:
@@ -81,7 +79,7 @@ class WebhookService:
                 async with httpx.AsyncClient() as client:
                     resp = await client.post(
                         wh.url,
-                        json=payload,
+                        content=payload_bytes,
                         headers={
                             "Content-Type": "application/json",
                             "X-Webhook-Signature": signature,

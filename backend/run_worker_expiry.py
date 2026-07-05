@@ -1,0 +1,4 @@
+import sys, os, asyncio
+sys.path.insert(0, os.path.dirname(__file__))
+from src.workers.expiry_worker import start_worker
+asyncio.run(start_worker())

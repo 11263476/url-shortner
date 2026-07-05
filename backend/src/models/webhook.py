@@ -1,7 +1,9 @@
-from sqlalchemy import String, ForeignKey, Boolean, DateTime, Text
+from datetime import datetime, timezone
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from src.models.base import Base
-from datetime import datetime
 
 
 class Webhook(Base):
@@ -13,6 +15,6 @@ class Webhook(Base):
     events: Mapped[str] = mapped_column(Text, nullable=False)
     secret: Mapped[str] = mapped_column(String, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     workspace = relationship("Workspace")

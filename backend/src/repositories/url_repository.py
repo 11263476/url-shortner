@@ -1,8 +1,9 @@
-from sqlalchemy import select, update, and_, or_
+from sqlalchemy import and_, or_, select, update
+from sqlalchemy.orm import selectinload
 
-from src.repositories.base import BaseRepository
-from src.models.url import URL, URLStatus
 from src.models.tag import Tag
+from src.models.url import URL, URLStatus
+from src.repositories.base import BaseRepository
 
 
 class URLRepository(BaseRepository[URL]):
@@ -10,10 +11,15 @@ class URLRepository(BaseRepository[URL]):
         super().__init__(URL, db)
 
     async def get_by_short_code(self, short_code: str) -> URL | None:
-        return await self.get_by(short_code=short_code)
+        result = await self.db.execute(select(URL).options(selectinload(URL.tags)).where(URL.short_code == short_code))
+        return result.scalar_one_or_none()
 
     async def get_by_custom_alias(self, alias: str) -> URL | None:
         return await self.get_by(custom_alias=alias)
+
+    async def get(self, id: int) -> URL | None:
+        result = await self.db.execute(select(URL).options(selectinload(URL.tags)).where(URL.id == id))
+        return result.scalar_one_or_none()
 
     async def alias_exists(self, alias: str) -> bool:
         result = await self.db.execute(
@@ -23,17 +29,29 @@ class URLRepository(BaseRepository[URL]):
 
     async def get_workspace_urls(
         self,
-        workspace_id: int,
+        workspace_id: int | None,
         folder_id: int | None = None,
         tag: str | None = None,
         search: str | None = None,
         status_filter: URLStatus | None = None,
         skip: int = 0,
         limit: int = 100,
+        user_id: int | None = None,
     ) -> list[URL]:
-        query = select(URL).where(
-            and_(URL.workspace_id == workspace_id, URL.status != URLStatus.deleted)
-        )
+        query = select(URL).where(URL.status != URLStatus.deleted)
+        if workspace_id is not None:
+            query = query.where(URL.workspace_id == workspace_id)
+        elif user_id is not None:
+            from src.models.workspace import Workspace
+            from src.models.workspace_member import WorkspaceMember
+            query = query.where(URL.workspace_id.in_(
+                select(Workspace.id).where(
+                    or_(
+                        Workspace.owner_id == user_id,
+                        Workspace.id.in_(select(WorkspaceMember.workspace_id).where(WorkspaceMember.user_id == user_id))
+                    )
+                )
+            ))
         if folder_id is not None:
             query = query.where(URL.folder_id == folder_id)
         if status_filter:
@@ -49,9 +67,18 @@ class URLRepository(BaseRepository[URL]):
                     URL.custom_alias.ilike(term),
                 )
             )
-        query = query.order_by(URL.created_at.desc()).offset(skip).limit(limit)
+        query = query.order_by(URL.created_at.desc())
+
+        # Get total count first
+        from sqlalchemy import func
+        count_query = select(func.count()).select_from(query.subquery())
+        total_result = await self.db.execute(count_query)
+        total = total_result.scalar() or 0
+
+        # Then get paginated items
+        query = query.options(selectinload(URL.tags)).offset(skip).limit(limit)
         result = await self.db.execute(query)
-        return list(result.scalars().all())
+        return {"items": list(result.scalars().all()), "total": total}
 
     async def soft_delete(self, id: int) -> None:
         await self.db.execute(update(URL).where(URL.id == id).values(status=URLStatus.deleted))

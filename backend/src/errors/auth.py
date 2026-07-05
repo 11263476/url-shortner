@@ -1,4 +1,4 @@
-from src.errors.common import ConflictError, UnauthorizedError, BadRequestError
+from src.errors.common import BadRequestError, ConflictError, UnauthorizedError
 
 
 class EmailAlreadyExists(ConflictError):

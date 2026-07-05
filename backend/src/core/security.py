@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta
 from typing import Optional
-from jose import jwt, JWTError, ExpiredSignatureError
+
+from jose import ExpiredSignatureError, JWTError, jwt
 from passlib.context import CryptContext
+
 from src.core.config import settings
 from src.errors import InvalidToken, TokenExpired
 

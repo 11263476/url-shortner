@@ -1,4 +1,4 @@
-from src.errors.common import NotFoundError, ConflictError, ForbiddenError, BadRequestError
+from src.errors.common import BadRequestError, ConflictError, ForbiddenError, NotFoundError
 
 
 class WorkspaceNotFound(NotFoundError):

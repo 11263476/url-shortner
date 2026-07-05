@@ -1,7 +1,7 @@
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 
+from src.models.workspace_invite import InviteStatus, WorkspaceInvite
 from src.repositories.base import BaseRepository
-from src.models.workspace_invite import WorkspaceInvite, InviteStatus
 
 
 class WorkspaceInviteRepository(BaseRepository[WorkspaceInvite]):
@@ -15,7 +15,7 @@ class WorkspaceInviteRepository(BaseRepository[WorkspaceInvite]):
         return await self.get_by(workspace_id=workspace_id, email=email, status=InviteStatus.pending)
 
     async def get_workspace_invites(self, workspace_id: int) -> list[WorkspaceInvite]:
-        return await self.get_many(workspace_id=workspace_id)
+        return await self.get_many(workspace_id=workspace_id, status=InviteStatus.pending)
 
     async def accept(self, token: str) -> WorkspaceInvite | None:
         invite = await self.get_by_token(token)

@@ -1,15 +1,16 @@
-from fastapi import APIRouter, Depends, status
 from typing import List
 
-from src.core.deps import get_current_user, get_api_key_service
+from fastapi import APIRouter, Depends, status
+
+from src.core.deps import get_api_key_service, get_current_user
 from src.models.user import User
-from src.schemas.api_key import APIKeyCreate, APIKeyResponse, APIKeyCreateResponse
+from src.schemas.api_key import APIKeyCreate, APIKeyCreateResponse, APIKeyResponse
 from src.services.api_key_service import APIKeyService
 
 router = APIRouter(prefix="/api-keys", tags=["API Keys"])
 
 
-@router.post("/", response_model=APIKeyCreateResponse, status_code=status.HTTP_201_CREATED,
+@router.post("", response_model=APIKeyCreateResponse, status_code=status.HTTP_201_CREATED,
     summary="Create API key",
     description="Creates a new API key. The full key is returned only once in the response.")
 async def create(payload: APIKeyCreate, current_user: User = Depends(get_current_user), svc: APIKeyService = Depends(get_api_key_service)):
@@ -22,7 +23,7 @@ async def create(payload: APIKeyCreate, current_user: User = Depends(get_current
     )
 
 
-@router.get("/", response_model=List[APIKeyResponse],
+@router.get("", response_model=List[APIKeyResponse],
     summary="List API keys")
 async def list_(current_user: User = Depends(get_current_user), svc: APIKeyService = Depends(get_api_key_service)):
     return await svc.list(current_user.id)

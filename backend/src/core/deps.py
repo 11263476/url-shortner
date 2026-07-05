@@ -1,37 +1,44 @@
+import time
+
 from fastapi import Depends, Query
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
-from typing import Optional
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db
-from src.core.security import decode_token
 from src.core.redis import redis_client
+from src.core.security import decode_token, verify_password
 from src.models.user import User
-from src.repositories import UserRepository, URLRepository, WorkspaceRepository
-from src.repositories.folder_repository import FolderRepository
-from src.repositories.tag_repository import TagRepository
+
+# In-memory cache for JWT blacklist checks — avoids Redis REST round-trip on every request
+_blacklist_cache: dict[str, float] = {}
+_BLACKLIST_CACHE_TTL = 60  # seconds
+from src.errors import InvalidToken, TokenRevoked, UnauthorizedError, UserNotFound
+from src.events.dispatcher import KafkaEventDispatcher
+from src.models.api_key import APIKeyStatus
+from src.repositories import URLRepository, UserRepository, WorkspaceRepository
 from src.repositories.analytics_repository import AnalyticsRepository
 from src.repositories.api_key_repository import APIKeyRepository
-from src.repositories.favorite_repository import FavoriteRepository
-from src.repositories.workspace_member_repository import WorkspaceMemberRepository
-from src.repositories.workspace_invite_repository import WorkspaceInviteRepository
 from src.repositories.audit_log_repository import AuditLogRepository
+from src.repositories.favorite_repository import FavoriteRepository
+from src.repositories.folder_repository import FolderRepository
+from src.repositories.tag_repository import TagRepository
+from src.repositories.webhook_receiver_repository import WebhookReceivedEventRepository
 from src.repositories.webhook_repository import WebhookRepository
-from src.services.auth_service import AuthService
-from src.services.url_service import URLService
-from src.services.workspace_service import WorkspaceService
-from src.services.folder_service import FolderService
-from src.services.tag_service import TagService
-from src.services.favorite_service import FavoriteService
+from src.repositories.workspace_invite_repository import WorkspaceInviteRepository
+from src.repositories.workspace_member_repository import WorkspaceMemberRepository
 from src.services.analytics_service import AnalyticsService
 from src.services.api_key_service import APIKeyService
-from src.services.bulk_service import BulkService
 from src.services.audit_service import AuditService
-from src.services.webhook_service import WebhookService
+from src.services.auth_service import AuthService
+from src.services.bulk_service import BulkService
+from src.services.favorite_service import FavoriteService
+from src.services.folder_service import FolderService
 from src.services.redirect_service import RedirectService
-from src.events.dispatcher import KafkaEventDispatcher
-from src.errors import InvalidToken, TokenRevoked, UserNotFound
+from src.services.tag_service import TagService
+from src.services.url_service import URLService
+from src.services.webhook_receiver_service import WebhookReceiverService
+from src.services.webhook_service import WebhookService
+from src.services.workspace_service import WorkspaceService
 
 
 class PaginationParams:
@@ -56,9 +63,36 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     token = credentials.credentials
-    is_blacklisted = await redis_client.get(f"jwt:blacklist:{token}")
-    if is_blacklisted:
+
+    # API key auth (lf_ prefix)
+    if token.startswith("lf_"):
+        prefix = token[:8]
+        key_record = await APIKeyRepository(db).get_by_prefix(prefix)
+        if not key_record:
+            raise UnauthorizedError("Invalid API key")
+        if key_record.status != APIKeyStatus.active:
+            raise UnauthorizedError("API key has been revoked")
+        if not verify_password(token, key_record.key_hash):
+            raise UnauthorizedError("Invalid API key")
+        if key_record.expires_at and key_record.expires_at < __import__("datetime").datetime.utcnow():
+            raise UnauthorizedError("API key has expired")
+        key_record.last_used_at = __import__("datetime").datetime.utcnow()
+        await db.commit()
+        user = await UserRepository(db).get(key_record.user_id)
+        if not user:
+            raise UserNotFound()
+        return user
+
+    # JWT auth
+    now = time.time()
+    cached = _blacklist_cache.get(token)
+    if cached is not None and cached > now:
         raise TokenRevoked()
+    if cached is None:
+        is_blacklisted = await redis_client.get(f"jwt:blacklist:{token}")
+        if is_blacklisted:
+            _blacklist_cache[token] = now + _BLACKLIST_CACHE_TTL
+            raise TokenRevoked()
     payload = decode_token(token)
     user_id: int = payload.get("sub")
     token_type: str = payload.get("type")
@@ -149,6 +183,7 @@ async def get_analytics_service(db: AsyncSession = Depends(get_db)) -> Analytics
     return AnalyticsService(
         url_repo=URLRepository(db),
         analytics_repo=AnalyticsRepository(db),
+        workspace_repo=WorkspaceRepository(db),
     )
 
 
@@ -172,4 +207,13 @@ async def get_redirect_service(db: AsyncSession = Depends(get_db)) -> RedirectSe
         url_repo=URLRepository(db),
         workspace_repo=WorkspaceRepository(db),
         events=KafkaEventDispatcher(),
+    )
+
+
+async def get_webhook_receiver_service(db: AsyncSession = Depends(get_db)) -> WebhookReceiverService:
+    return WebhookReceiverService(
+        db=db,
+        repo=WebhookReceivedEventRepository(db),
+        webhook_repo=WebhookRepository(db),
+        workspace_repo=WorkspaceRepository(db),
     )
