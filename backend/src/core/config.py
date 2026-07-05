@@ -18,14 +18,20 @@ class Settings(BaseSettings):
     @computed_field
     @property
     def ASYNC_DATABASE_URI(self) -> str:
-        # If a full DATABASE_URL is provided (e.g. Neon/Supabase), use it directly
         if self.DATABASE_URL:
-            # asyncpg does not support ?sslmode= or ?channel_binding= query params
-            # Strip them and re-add SSL via the asyncpg-native ?ssl=require form
             base = self.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
-            # Remove incompatible params and keep only the base URL
-            base = base.split("?")[0]
-            return f"{base}?ssl=require"
+            # asyncpg does not support sslmode= or channel_binding= query params
+            # Convert sslmode=require to asyncpg-native ?ssl=require form
+            q = ""
+            if "?" in base:
+                base, q = base.split("?", 1)
+                params = q.split("&")
+                ssl_params = [p for p in params if p.startswith("sslmode=")]
+                other_params = [p for p in params if not p.startswith("sslmode=") and not p.startswith("channel_binding=")]
+                if ssl_params and "require" in ssl_params[0]:
+                    other_params.append("ssl=require")
+                q = ("?" + "&".join(other_params)) if other_params else ""
+            return f"{base}{q}"
         return (
             f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
             f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
