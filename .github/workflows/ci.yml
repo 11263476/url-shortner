@@ -203,3 +203,12 @@ jobs:
         with:
           name: docker-frontend-log
           path: /tmp/docker_frontend.log
+
+      - name: Show frontend Docker log excerpt on failure
+        if: failure()
+        shell: bash
+        run: |
+          echo "### Frontend Docker Build Output (last 200 lines)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -200 /tmp/docker_frontend.log 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || echo "(no log file)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
