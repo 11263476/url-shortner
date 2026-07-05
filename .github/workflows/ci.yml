@@ -55,6 +55,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: pip install --upgrade pip hatchling
       - run: pip install .[dev]
+      - run: python -m alembic upgrade head
       - run: python -m compileall src/
       - run: python -m pytest tests/ -v --cov=src --cov-report=xml -k "not kafka" --timeout=120
       - uses: codecov/codecov-action@v4
