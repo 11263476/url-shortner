@@ -19,6 +19,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 backend/coverage.xml
+.coverage
 backend/.backend_pid
 
 # Logs
