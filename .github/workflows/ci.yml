@@ -166,6 +166,7 @@ jobs:
           docker build ./backend 2>&1 | tee /tmp/docker_backend.log
 
       - name: Debug Docker available
+        if: always()
         shell: bash
         run: |
           set -x
