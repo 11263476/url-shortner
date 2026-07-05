@@ -1,11 +1,9 @@
 FROM python:3.12-slim AS builder
 
 WORKDIR /app
-COPY pyproject.toml .
-RUN pip install --no-cache-dir hatchling build
+RUN pip install --no-cache-dir --upgrade pip hatchling build wheel
 COPY . .
-RUN python -m build --wheel
-RUN python -m compileall src
+RUN python -m pip wheel --no-deps --no-build-isolation --wheel-dir /app/dist .
 
 FROM python:3.12-slim
 
