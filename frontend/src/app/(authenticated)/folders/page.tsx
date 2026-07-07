@@ -6,9 +6,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { auth, foldersApi, workspacesApi, Folder } from "@/lib/api"
+import { auth, foldersApi, workspacesApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
-import { Plus, Trash2, FolderOpen, Pencil, Loader2 } from "lucide-react"
+import { Plus, Trash2, FolderOpen, Pencil } from "lucide-react"
 
 export default function FoldersPage() {
   const router = useRouter()
@@ -41,7 +41,7 @@ export default function FoldersPage() {
 
   const wsId = workspaces?.[0]?.id
 
-  const { data: folders = [], isLoading: isLoadingFolders } = useQuery({
+  const { data: folders = [] } = useQuery({
     queryKey: ["folders", wsId],
     queryFn: () => foldersApi.list(wsId!),
     enabled: !!wsId,

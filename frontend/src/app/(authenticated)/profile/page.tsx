@@ -47,7 +47,7 @@ export default function ProfilePage() {
   const [avatarLoading, setAvatarLoading] = useState(false)
   const [avatarError, setAvatarError] = useState("")
 
-  const { isLoading: authLoading } = useQuery({
+  useQuery({
     queryKey: ["authMe"],
     queryFn: async () => {
       try {

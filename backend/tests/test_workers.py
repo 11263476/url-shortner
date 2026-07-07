@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, timedelta
 
 import pytest
+pytestmark = pytest.mark.integration
 import pytest_asyncio
 from sqlalchemy import select
 

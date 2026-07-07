@@ -12,6 +12,17 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  pre-commit:
+    name: Pre-commit Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install pre-commit
+      - run: pre-commit run --all-files --show-diff-on-failure
+
   backend-lint:
     name: Backend Lint
     runs-on: ubuntu-latest
@@ -23,11 +34,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - run: pip install ruff
+      - run: pip install ruff mypy
       - run: ruff check src/ --exit-zero
+      - run: mypy src/ --ignore-missing-imports
 
-  backend-test:
-    name: Backend Test
+  backend-unit:
+    name: Backend Unit Tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -55,14 +67,57 @@ jobs:
       - run: pip install --upgrade pip hatchling
       - run: pip install .[dev]
       - run: python -m alembic upgrade head
-      - run: python -m compileall src/
-      - name: Run tests (capture output)
-        run: python -m pytest tests/ -v --cov=src --cov-report=xml -k "not kafka" --timeout=120 2>&1 | tee /tmp/test_output.log
+      - name: Run unit tests (excl. integration-marked tests)
+        run: python -m pytest tests/ -v --cov=src --cov-report=xml -m "not integration" --timeout=60 2>&1 | tee /tmp/test_output.log
       - name: Upload test log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-test-log
+          name: backend-unit-log
+          path: /tmp/test_output.log
+
+  backend-integration:
+    name: Backend Integration Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    if: github.ref == 'refs/heads/main'
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: linkforge_user
+          POSTGRES_PASSWORD: linkforge_password
+          POSTGRES_DB: linkforge_db
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+    env:
+      DATABASE_URL: postgresql://linkforge_user:linkforge_password@localhost:5432/linkforge_db
+      MONGODB_URI: mongodb://admin:adminpassword@localhost:27017
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install --upgrade pip hatchling
+      - run: pip install .[dev]
+      - run: python -m alembic upgrade head
+      - name: Run integration tests
+        run: python -m pytest tests/ -v --cov=src --cov-report=xml -m "integration" --timeout=120 2>&1 | tee /tmp/test_output.log
+      - name: Upload test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-integration-log
           path: /tmp/test_output.log
       - uses: codecov/codecov-action@v4
         with:
@@ -129,7 +184,7 @@ jobs:
   docker-build:
     name: Docker Build & Push
     runs-on: ubuntu-latest
-    needs: [backend-lint, backend-test, frontend-lint, frontend-test, frontend-build]
+    needs: [backend-lint, backend-unit, frontend-lint, frontend-test, frontend-build]
     permissions:
       contents: read
       packages: write
@@ -178,5 +233,21 @@ jobs:
         run: |
           echo "::error::Frontend Docker build failed. Build tail:"
           tail -15 /tmp/fe.log 2>/dev/null | while IFS= read -r line; do echo "::error::$line"; done
+
+      - name: Scan backend image with Trivy
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/backend:${{ github.sha }}
+          format: table
+          exit-code: 1
+          severity: HIGH,CRITICAL
+
+      - name: Scan frontend image with Trivy
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/frontend:${{ github.sha }}
+          format: table
+          exit-code: 1
+          severity: HIGH,CRITICAL
 
 

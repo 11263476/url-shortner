@@ -8,9 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { auth, tagsApi, workspacesApi, Tag, Workspace } from "@/lib/api"
+import { auth, tagsApi, workspacesApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
-import { Plus, X, Tags as TagsIcon, Loader2 } from "lucide-react"
+import { Plus, X, Tags as TagsIcon } from "lucide-react"
 
 export default function TagsPage() {
   const router = useRouter()
@@ -42,7 +42,7 @@ export default function TagsPage() {
 
   const wsId = selectedWsId || workspaces?.[0]?.id
 
-  const { data: tags = [], isLoading: isLoadingTags } = useQuery({
+  const { data: tags = [] } = useQuery({
     queryKey: ["tags", wsId],
     queryFn: () => tagsApi.list(wsId!),
     enabled: !!wsId,

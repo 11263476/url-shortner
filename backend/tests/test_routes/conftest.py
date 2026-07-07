@@ -1,6 +1,8 @@
+import pytest
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
+pytestmark = pytest.mark.integration
 import pytest_asyncio
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine

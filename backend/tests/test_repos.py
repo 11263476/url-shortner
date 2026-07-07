@@ -1,4 +1,5 @@
 import pytest
+pytestmark = pytest.mark.integration
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.url import URLStatus
