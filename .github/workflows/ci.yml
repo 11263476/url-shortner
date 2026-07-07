@@ -157,6 +157,13 @@ jobs:
       - name: Build frontend
         shell: bash
         run: |
-          docker build ./frontend
+          docker build ./frontend 2>&1 | tee /tmp/fe.log
+          EC=${PIPESTATUS[0]}; echo "EXIT=$EC" >> "$GITHUB_ENV"; exit $EC
+
+      - name: Show frontend error
+        if: env.EXIT != '0'
+        shell: bash
+        run: |
+          tail -10 /tmp/fe.log | while IFS= read -r line; do echo "::error::$line"; done
 
 
