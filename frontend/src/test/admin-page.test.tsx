@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { render, screen } from "@/test/test-utils"
 import AdminPage from "@/app/(authenticated)/admin/page"
 
 vi.mock("next/navigation", () => ({
@@ -16,34 +16,24 @@ const { mockSuperadmin, mockStore, mockStoreHook } = vi.hoisted(() => {
 
 vi.mock("@/store/auth", () => ({ useAuthStore: mockStoreHook }))
 
-vi.mock("@/lib/api", () => ({
-  auth: { me: vi.fn().mockResolvedValue(mockSuperadmin) },
-  adminApi: {
-    stats: vi.fn().mockResolvedValue({ total_users: 10, total_workspaces: 5, total_urls: 100 }),
-    listUsers: vi.fn().mockResolvedValue({ total: 1, users: [{ id: 1, email: "admin@test.com", is_superadmin: true, is_verified: true, role: "admin", plan: "enterprise", avatar_url: null, created_at: "2024-01-01" }] }),
-    toggleSuperadmin: vi.fn(),
-    deleteUser: vi.fn(),
-  },
-}))
-
 describe("AdminPage", () => {
   beforeEach(() => {
     mockStore.user = mockSuperadmin
   })
 
-  it("renders the page title", () => {
+  it("renders the page title", async () => {
     render(<AdminPage />)
-    expect(screen.getByText("Admin Panel")).toBeDefined()
+    expect(await screen.findByText("Admin Panel")).toBeDefined()
   })
 
-  it("renders stats tab", () => {
+  it("renders stats tab", async () => {
     render(<AdminPage />)
-    expect(screen.getByText("Stats")).toBeDefined()
+    expect(await screen.findByText("Stats")).toBeDefined()
   })
 
-  it("renders users tab", () => {
+  it("renders users tab", async () => {
     render(<AdminPage />)
-    expect(screen.getByText(/Users/)).toBeDefined()
+    expect(await screen.findByText(/Users/)).toBeDefined()
   })
 
   it("displays stat cards with data", async () => {
@@ -53,8 +43,8 @@ describe("AdminPage", () => {
     expect(await screen.findByText("100")).toBeDefined()
   })
 
-  it("shows superadmin badge", () => {
+  it("shows superadmin badge", async () => {
     render(<AdminPage />)
-    expect(screen.getByText("Superadmin")).toBeDefined()
+    expect(await screen.findByText("Superadmin")).toBeDefined()
   })
 })

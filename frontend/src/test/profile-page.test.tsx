@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { render, screen } from "@/test/test-utils"
 import ProfilePage from "@/app/(authenticated)/profile/page"
 
 const { mockUser, mockStore, mockStoreHook, authMeResolvedObj } = vi.hoisted(() => {
@@ -17,59 +17,44 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/store/auth", () => ({ useAuthStore: mockStoreHook }))
 
-vi.mock("@/lib/api", () => ({
-  auth: { me: vi.fn(() => authMeResolvedObj.value ? Promise.resolve(mockUser) : Promise.reject(new Error("Unauthorized"))) },
-  profileApi: { changePassword: vi.fn(), changeEmail: vi.fn(), uploadAvatar: vi.fn() },
-  getErrorMessage: vi.fn((e) => e instanceof Error ? e.message : "Error"),
-}))
-
-vi.mock("@tanstack/react-query", () => ({
-  useQuery: vi.fn(({ queryKey }: { queryKey: string[] }) => {
-    if (queryKey[0] === "authMe") return { data: mockUser, isLoading: false }
-    return {}
-  }),
-  useMutation: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false })),
-  useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })),
-}))
-
 describe("ProfilePage", () => {
   beforeEach(() => {
     authMeResolvedObj.value = true
     mockStore.user = mockUser
   })
 
-  it("renders the page title", () => {
+  it("renders the page title", async () => {
     render(<ProfilePage />)
-    expect(screen.getByText("Profile")).toBeDefined()
+    expect(await screen.findByText("Profile")).toBeDefined()
   })
 
-  it("renders account details sections", () => {
+  it("renders account details sections", async () => {
     render(<ProfilePage />)
-    expect(screen.getByText("Account Details")).toBeDefined()
-    expect(screen.getByText("Avatar")).toBeDefined()
-    expect(screen.getByText("Change Password")).toBeDefined()
-    expect(screen.getByText("Change Email")).toBeDefined()
+    expect(await screen.findByText("Account Details")).toBeDefined()
+    expect(await screen.findByText("Avatar")).toBeDefined()
+    expect(await screen.findByText("Change Password")).toBeDefined()
+    expect(await screen.findByText("Change Email")).toBeDefined()
   })
 
-  it("renders user email", () => {
+  it("renders user email", async () => {
     render(<ProfilePage />)
-    expect(screen.getByText("test@test.com")).toBeDefined()
+    expect(await screen.findByText("test@test.com")).toBeDefined()
   })
 
-  it("renders user details", () => {
+  it("renders user details", async () => {
     render(<ProfilePage />)
-    expect(screen.getByText("admin")).toBeDefined()
-    expect(screen.getByText("free")).toBeDefined()
-    expect(screen.getByText("Yes")).toBeDefined()
+    expect(await screen.findByText("admin")).toBeDefined()
+    expect(await screen.findByText("free")).toBeDefined()
+    expect(await screen.findByText("Yes")).toBeDefined()
   })
 
-  it("renders upgrade plan card", () => {
+  it("renders upgrade plan card", async () => {
     render(<ProfilePage />)
-    expect(screen.getByText("Upgrade Plan")).toBeDefined()
+    expect(await screen.findByText("Upgrade Plan")).toBeDefined()
   })
 
-  it("renders upload avatar button", () => {
+  it("renders upload avatar button", async () => {
     render(<ProfilePage />)
-    expect(screen.getByText("Upload Avatar")).toBeDefined()
+    expect(await screen.findByText("Upload Avatar")).toBeDefined()
   })
 })
