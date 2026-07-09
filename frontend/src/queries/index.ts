@@ -3,10 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   auth, urls, workspacesApi, foldersApi, tagsApi,
-  apiKeysApi, webhooksApi, favoritesApi, bulkApi, auditApi,
-  type URLItem, type Workspace, type WorkspaceMember,
-  type Folder, type Tag, type ApiKey, type Webhook,
-  type Favorite, type AuditLog,
+  apiKeysApi, webhooksApi, favoritesApi, auditApi,
 } from "@/lib/api"
 
 // --- Auth ---

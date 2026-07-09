@@ -1,8 +1,7 @@
-import pytest
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
-pytestmark = pytest.mark.integration
+import pytest
 import pytest_asyncio
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -16,6 +15,8 @@ from src.models.user import User
 from src.models.workspace import Workspace
 from src.models.workspace_invite import WorkspaceInvite
 from src.models.workspace_member import MemberRole, WorkspaceMember
+
+pytestmark = pytest.mark.integration
 
 _test_engine = create_async_engine(
     settings.ASYNC_DATABASE_URI,

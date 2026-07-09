@@ -7,7 +7,6 @@ import logging
 from datetime import datetime, timedelta
 
 import pytest
-pytestmark = pytest.mark.integration
 import pytest_asyncio
 from sqlalchemy import select
 
@@ -24,6 +23,7 @@ from src.workers.cleanup_worker import run_cleanup
 from src.workers.expiry_worker import scan_and_expire_urls
 from src.workers.webhook_retry_worker import backoff_delay
 
+pytestmark = pytest.mark.integration
 
 logger = logging.getLogger(__name__)
 
@@ -262,7 +262,7 @@ async def test_multiple_workers_end_to_end(setup_db):
 @pytest.mark.asyncio
 async def test_metadata_worker_extract_and_store(setup_db):
     """Test metadata worker extracts OG tags and stores them."""
-    test_data = await setup_db
+    await setup_db
     from src.workers.metadata_worker import extract_metadata
 
     meta = await extract_metadata("https://example.com")

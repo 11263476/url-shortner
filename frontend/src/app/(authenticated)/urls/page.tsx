@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,16 +9,15 @@ import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { useMe, useWorkspaces, useWorkspaceMembers, useUrls, useFolders, useTags, useFavorites, useDeleteUrlMutation, useAddFavoriteMutation, useRemoveFavoriteMutation } from "@/queries"
-import { Search, ExternalLink, Trash2, BarChart3, Heart, FolderOpen, Tags } from "lucide-react"
+import { Search, ExternalLink, Trash2, BarChart3, Heart, Tags } from "lucide-react"
 
 export default function URLsPage() {
   useEffect(() => { document.title = "URLs - LinkForge" }, [])
-  const router = useRouter()
-  const { data: user } = useMe()
+  useMe()
   const { data: workspaces = [] } = useWorkspaces()
   const [wsId, setWsId] = useState<number | null>(null)
 
-  const { data: members = [] } = useWorkspaceMembers(wsId)
+  useWorkspaceMembers(wsId)
   const { data: folders = [] } = useFolders(wsId)
   const { data: allTags = [] } = useTags(wsId)
   const { data: favorites = [] } = useFavorites()
@@ -38,9 +37,6 @@ export default function URLsPage() {
   const addFavorite = useAddFavoriteMutation()
   const removeFavorite = useRemoveFavoriteMutation()
   const favoriteSet = new Set(favorites.map((f) => f.url_id))
-
-  const myRole = members.find((m) => m.user_id === user?.id)?.role
-  const canEdit = myRole === "admin" || myRole === "editor"
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300)

@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -15,8 +15,6 @@ export default function WebhookReceiverPage() {
   const { setUser } = useAuthStore()
   const [selected, setSelected] = useState<ReceivedWebhookEvent | null>(null)
   const [copied, setCopied] = useState(false)
-  const queryClient = useQueryClient()
-
   const { isLoading: authLoading } = useQuery({
     queryKey: ["authMe"],
     queryFn: async () => {

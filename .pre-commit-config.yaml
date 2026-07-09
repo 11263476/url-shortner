@@ -14,5 +14,5 @@ repos:
     rev: v0.11.0
     hooks:
       - id: ruff
-        args: [--fix, --exit-zero]
+        args: [--exit-zero]
         types_or: [python, pyi]

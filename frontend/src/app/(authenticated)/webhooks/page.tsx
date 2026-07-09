@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { auth, webhooksApi, workspacesApi, Webhook } from "@/lib/api"
+import { auth, webhooksApi, workspacesApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
-import { Webhook as WebhookIcon, Plus, Trash2, Radio, Loader2 } from "lucide-react"
+import { Webhook as WebhookIcon, Plus, Trash2, Radio } from "lucide-react"
 import Link from "next/link"
 
 const EVENT_OPTIONS = ["url.created", "url.clicked", "url.expired", "url.deleted"]
@@ -45,7 +45,7 @@ export default function WebhooksPage() {
 
   const wsId = workspaces?.[0]?.id
 
-  const { data: hooks = [], isLoading: isHooksLoading } = useQuery({
+  const { data: hooks = [] } = useQuery({
     queryKey: ["webhooks", wsId],
     queryFn: () => webhooksApi.list(wsId!),
     enabled: !!wsId,

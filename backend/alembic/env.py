@@ -22,8 +22,8 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Import all models so Alembic can discover them for autogenerate
-from src.core.config import settings
-from src.models import (  # noqa: F401
+from src.core.config import settings  # noqa: E402
+from src.models import (  # noqa: E402, F401
     URL,
     APIKey,
     AuditLog,
@@ -39,7 +39,7 @@ from src.models import (  # noqa: F401
     WorkspaceInvite,
     WorkspaceMember,
 )
-from src.models.base import Base
+from src.models.base import Base  # noqa: E402
 
 target_metadata = Base.metadata
 

@@ -6,4 +6,3 @@ node_modules
 .env*
 frontend@0.1.0
 *.log
-

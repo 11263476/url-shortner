@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, beforeEach } from "vitest"
 import { setTokenCookie, setRefreshTokenCookie, clearTokenCookies } from "@/lib/token-cookie"
 
 describe("token-cookie", () => {

@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -10,9 +10,9 @@ import { Select } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { auth, getErrorMessage, workspacesApi, Workspace, WorkspaceMember, WorkspaceInvite } from "@/lib/api"
+import { auth, getErrorMessage, workspacesApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
-import { Plus, Users, Building2, XCircle, Shield, UserPlus, LogIn, Trash2, Pencil } from "lucide-react"
+import { Plus, Users, Building2, XCircle, UserPlus, LogIn, Trash2, Pencil } from "lucide-react"
 
 export default function WorkspacesPage() {
   return (
@@ -163,7 +163,6 @@ function WorkspacesPageInner() {
   const isOwner = (wsId: number) => workspaces.find(w => w.id === wsId)?.owner_id === user?.id
   const isAdmin = (wsId: number) => isOwner(wsId) || myRole(wsId) === "admin"
   const canManage = (wsId: number) => isAdmin(wsId)
-  const isViewer = (wsId: number) => myRole(wsId) === "viewer"
 
   return (
     <div className="p-6">

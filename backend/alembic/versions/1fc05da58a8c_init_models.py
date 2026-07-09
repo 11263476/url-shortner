@@ -1,7 +1,7 @@
 """init models
 
 Revision ID: 1fc05da58a8c
-Revises: 
+Revises:
 Create Date: 2026-06-07 19:08:45.506723
 
 """

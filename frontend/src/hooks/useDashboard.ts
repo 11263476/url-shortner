@@ -7,12 +7,12 @@ export function useDashboard() {
   const { data: user, isLoading: userLoading } = useMe()
   const { data: workspaces = [], isLoading: workspacesLoading } = useWorkspaces()
   const [wsId, setWsId] = useState<number | null>(null)
-  const { data: members = [], isLoading: membersLoading } = useWorkspaceMembers(wsId)
-  const { data: urlsData, error: urlsError, isLoading: urlsLoading } = useUrls(wsId, { limit: 50 })
+  const { data: members = [] } = useWorkspaceMembers(wsId)
+  const { data: urlsData, error: urlsError } = useUrls(wsId, { limit: 50 })
   const urlList = urlsData?.items || []
   const totalUrlsCount = urlsData?.total || 0
 
-  const { data: keys = [], isLoading: keysLoading } = useApiKeys()
+  const { data: keys = [] } = useApiKeys()
   const { data: quota } = useApiKeyQuota(keys[0]?.id ?? null)
 
   const deleteUrl = useDeleteUrlMutation()

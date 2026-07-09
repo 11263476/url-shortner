@@ -43,4 +43,3 @@ def create_email_verification_token(email: str) -> str:
 def create_password_reset_token(email: str) -> str:
     expire = datetime.utcnow() + timedelta(hours=1)
     return jwt.encode({"sub": email, "exp": expire, "type": "reset"}, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-
