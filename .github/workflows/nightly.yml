@@ -59,7 +59,7 @@ jobs:
         run: python -m pytest tests/ -v --cov=src --cov-report=xml --timeout=120 2>&1 | tee /tmp/nightly_output.log
       - name: Upload test log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nightly-test-log
           path: /tmp/nightly_output.log
