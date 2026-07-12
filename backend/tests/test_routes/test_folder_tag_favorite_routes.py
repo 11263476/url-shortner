@@ -66,7 +66,7 @@ class TestFavoriteRoutes:
         resp = await client.post("/api/v1/favorites", headers=auth_headers, json={
             "url_id": test_url.id,
         })
-        assert resp.status_code == status.HTTP_200_OK
+        assert resp.status_code == status.HTTP_201_CREATED
         assert resp.json()["url_id"] == test_url.id
 
     async def test_list_favorites(self, client, auth_headers, test_url):
@@ -79,11 +79,11 @@ class TestFavoriteRoutes:
         await client.post("/api/v1/favorites", headers=auth_headers, json={"url_id": test_url.id})
         resp = await client.get(f"/api/v1/favorites/check/{test_url.id}", headers=auth_headers)
         assert resp.status_code == status.HTTP_200_OK
-        assert resp.json()["is_favorited"] is True
+        assert resp.json()["favorited"] is True
 
     async def test_remove_favorite(self, client, auth_headers, test_url):
         await client.post("/api/v1/favorites", headers=auth_headers, json={"url_id": test_url.id})
         resp = await client.delete(f"/api/v1/favorites/{test_url.id}", headers=auth_headers)
         assert resp.status_code == status.HTTP_200_OK
         check = await client.get(f"/api/v1/favorites/check/{test_url.id}", headers=auth_headers)
-        assert check.json()["is_favorited"] is False
+        assert check.json()["favorited"] is False

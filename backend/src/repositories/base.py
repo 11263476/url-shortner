@@ -34,13 +34,13 @@ class BaseRepository(Generic[ModelType]):
         return list(result.scalars().all())
 
     async def update(self, id: int, **values) -> Optional[ModelType]:
-        stmt = update(self.model).where(self.model.id == id).values(**values)
+        stmt = update(self.model).where(self.model.id == id).values(**values)  # type: ignore[attr-defined]
         await self.db.execute(stmt)
         await self.db.commit()
         return await self.get(id)
 
     async def delete(self, id: int) -> bool:
-        stmt = delete(self.model).where(self.model.id == id)
+        stmt = delete(self.model).where(self.model.id == id)  # type: ignore[attr-defined]
         result = await self.db.execute(stmt)
         await self.db.commit()
-        return result.rowcount > 0
+        return result.rowcount > 0  # type: ignore[attr-defined, no-any-return]

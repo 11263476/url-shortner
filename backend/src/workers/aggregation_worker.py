@@ -14,10 +14,10 @@ _last_cutoff: datetime | None = None
 
 async def run_aggregation_rollup(logger):
     global _last_cutoff
-    match = {}
+    match: dict[str, object] = {}
     if _last_cutoff:
         match["clicked_at"] = {"$gt": _last_cutoff}
-    pipeline = []
+    pipeline: list[dict[str, object]] = []
     if match:
         pipeline.append({"$match": match})
     pipeline.extend([

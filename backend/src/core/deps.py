@@ -1,4 +1,5 @@
 import time
+from datetime import datetime, timezone
 
 from fastapi import Depends, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -10,6 +11,10 @@ from src.core.security import decode_token, verify_password
 from src.models.user import User
 
 # In-memory cache for JWT blacklist checks — avoids Redis REST round-trip on every request
+# Trade-off: entries are lost on process restart, and a blacklisted token remains usable
+# for up to _BLACKLIST_CACHE_TTL seconds after being seen here. Acceptable because
+# the cache only speeds up repeated checks — the authoritative source is always Redis.
+# If the process restarts, the cache is empty and every check hits Redis once.
 _blacklist_cache: dict[str, float] = {}
 _BLACKLIST_CACHE_TTL = 60  # seconds
 from src.errors import InvalidToken, TokenRevoked, UnauthorizedError, UserNotFound
@@ -74,9 +79,9 @@ async def get_current_user(
             raise UnauthorizedError("API key has been revoked")
         if not verify_password(token, key_record.key_hash):
             raise UnauthorizedError("Invalid API key")
-        if key_record.expires_at and key_record.expires_at < __import__("datetime").datetime.utcnow():
+        if key_record.expires_at and key_record.expires_at < datetime.now(timezone.utc):
             raise UnauthorizedError("API key has expired")
-        key_record.last_used_at = __import__("datetime").datetime.utcnow()
+        key_record.last_used_at = datetime.now(timezone.utc)
         await db.commit()
         user = await UserRepository(db).get(key_record.user_id)
         if not user:
@@ -94,8 +99,8 @@ async def get_current_user(
             _blacklist_cache[token] = now + _BLACKLIST_CACHE_TTL
             raise TokenRevoked()
     payload = decode_token(token)
-    user_id: int = payload.get("sub")
-    token_type: str = payload.get("type")
+    user_id = payload.get("sub")
+    token_type = payload.get("type")
     if not user_id or token_type != "access":
         raise InvalidToken()
     user = await UserRepository(db).get(int(user_id))

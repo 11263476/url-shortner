@@ -4,7 +4,7 @@ import logging
 import queue
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
 
@@ -61,9 +61,9 @@ class BatchedLokiHandler(logging.Handler):
                     try:
                         log_entry = json.loads(log_entry)
                     except json.JSONDecodeError:
-                        log_entry = {"message": log_entry}
+                        log_entry = {"message": log_entry}  # type: ignore[assignment]
 
-                timestamp_ns = int(datetime.utcnow().timestamp() * 1e9)
+                timestamp_ns = int(datetime.now(timezone.utc).timestamp() * 1e9)
                 level = record.levelname.lower()
                 stream_key = (settings.PROJECT_NAME, settings.ENVIRONMENT, level)
                 if stream_key not in streams:
@@ -75,7 +75,7 @@ class BatchedLokiHandler(logging.Handler):
                         },
                         "values": [],
                     }
-                streams[stream_key]["values"].append([str(timestamp_ns), json.dumps(log_entry)])
+                streams[stream_key]["values"].append([str(timestamp_ns), json.dumps(log_entry)])  # type: ignore[attr-defined]
 
             payload = {"streams": list(streams.values())}
             self._client.post(self.loki_url, json=payload)

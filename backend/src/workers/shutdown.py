@@ -13,7 +13,7 @@ def install_signal_handlers():
     loop = asyncio.get_event_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         try:
-            loop.add_signal_handler(sig, lambda s=sig: _signal_handler(s))
+            loop.add_signal_handler(sig, lambda s=sig: _signal_handler(s))  # type: ignore[misc]
         except NotImplementedError:
             signal.signal(sig, _handler)
 

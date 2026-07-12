@@ -49,9 +49,9 @@ class TestAuthRoutes:
         assert resp.status_code == status.HTTP_200_OK
         assert resp.json()["email"] == test_user.email
 
-    async def test_get_me_unauthenticated(self, client):
-        resp = await client.get("/api/v1/auth/me")
-        assert resp.status_code == status.HTTP_403_FORBIDDEN
+    async def test_get_me_unauthenticated(self, unauth_client):
+        resp = await unauth_client.get("/api/v1/auth/me")
+        assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
     async def test_forgot_password(self, client):
         resp = await client.post("/api/v1/auth/forgot-password", json={

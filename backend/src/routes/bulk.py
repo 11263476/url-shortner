@@ -46,21 +46,36 @@ async def bulk_update(
 
 @router.post("/disable",
     summary="Bulk disable URLs")
-async def bulk_disable(workspace_id: int, url_ids: list[int], current_user: User = Depends(get_current_user), svc: BulkService = Depends(get_bulk_service)):
+async def bulk_disable(
+    workspace_id: int = Query(..., description="Workspace containing the URLs"),
+    url_ids: list[int] = Query(..., description="List of URL IDs to disable"),
+    current_user: User = Depends(get_current_user),
+    svc: BulkService = Depends(get_bulk_service),
+):
     count = await svc.disable(workspace_id, current_user.id, url_ids)
     return {"disabled": count}
 
 
 @router.post("/reactivate",
     summary="Bulk reactivate URLs")
-async def bulk_reactivate(workspace_id: int, url_ids: list[int], current_user: User = Depends(get_current_user), svc: BulkService = Depends(get_bulk_service)):
+async def bulk_reactivate(
+    workspace_id: int = Query(..., description="Workspace containing the URLs"),
+    url_ids: list[int] = Query(..., description="List of URL IDs to reactivate"),
+    current_user: User = Depends(get_current_user),
+    svc: BulkService = Depends(get_bulk_service),
+):
     count = await svc.reactivate(workspace_id, current_user.id, url_ids)
     return {"reactivated": count}
 
 
 @router.post("/delete",
     summary="Bulk delete URLs")
-async def bulk_delete(workspace_id: int, url_ids: list[int], current_user: User = Depends(get_current_user), svc: BulkService = Depends(get_bulk_service)):
+async def bulk_delete(
+    workspace_id: int = Query(..., description="Workspace containing the URLs"),
+    url_ids: list[int] = Query(..., description="List of URL IDs to delete"),
+    current_user: User = Depends(get_current_user),
+    svc: BulkService = Depends(get_bulk_service),
+):
     count = await svc.delete(workspace_id, current_user.id, url_ids)
     return {"deleted": count}
 

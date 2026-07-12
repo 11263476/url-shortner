@@ -21,7 +21,7 @@ MAX_DELAY = 3600
 
 def backoff_delay(retry_count: int) -> int:
     delay = BASE_DELAY * (2 ** (retry_count - 1))
-    return min(delay, MAX_DELAY)
+    return min(delay, MAX_DELAY)  # type: ignore[no-any-return]
 
 
 async def retry_failed_events(logger):

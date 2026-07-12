@@ -2,7 +2,7 @@
 API Key authentication and quota enforcement middleware.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import Request
 from sqlalchemy import select
@@ -35,7 +35,7 @@ class APIKeyQuotaManager:
         Returns True if quota available, False if exceeded.
         """
         quota = APIKeyQuotaManager.get_quota_for_user(user_plan)
-        redis_key = f"api_key_quota:{api_key_id}:{datetime.utcnow().strftime('%Y-%m-%d')}"
+        redis_key = f"api_key_quota:{api_key_id}:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
 
         # Get current usage from Redis
         current_usage = await redis_client.get(redis_key)
@@ -46,7 +46,7 @@ class APIKeyQuotaManager:
     @staticmethod
     async def increment_quota(api_key_id: int) -> None:
         """Increment quota usage for today."""
-        today = datetime.utcnow().strftime('%Y-%m-%d')
+        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
         redis_key = f"api_key_quota:{api_key_id}:{today}"
 
         # Increment and set expiry to end of day (24 hours)
@@ -57,7 +57,7 @@ class APIKeyQuotaManager:
     async def get_remaining_quota(api_key_id: int, user_plan: str) -> int:
         """Get remaining quota for today."""
         quota = APIKeyQuotaManager.get_quota_for_user(user_plan)
-        redis_key = f"api_key_quota:{api_key_id}:{datetime.utcnow().strftime('%Y-%m-%d')}"
+        redis_key = f"api_key_quota:{api_key_id}:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
 
         current_usage = await redis_client.get(redis_key)
         current_usage = int(current_usage) if current_usage else 0
@@ -95,14 +95,14 @@ async def authenticate_api_key(request: Request) -> tuple[User, APIKey]:
         if api_key.status != APIKeyStatus.active:
             raise ForbiddenError("API key has been revoked")
 
-        if api_key.expires_at and api_key.expires_at < datetime.utcnow():
+        if api_key.expires_at and api_key.expires_at < datetime.now(timezone.utc):
             raise ForbiddenError("API key has expired")
 
         if not verify_password(raw_key, api_key.key_hash):
             raise UnauthorizedError("Invalid API key")
 
         # Update last_used_at
-        api_key.last_used_at = datetime.utcnow()
+        api_key.last_used_at = datetime.now(timezone.utc)
         await db.commit()
 
         return user, api_key

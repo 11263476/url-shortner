@@ -1,9 +1,13 @@
+import asyncio
 import json
 import time
 
 from upstash_redis.asyncio import Redis as UpstashRedis
 
 from src.core.config import settings
+from src.log_utils import get_logger
+
+logger = get_logger(__name__)
 
 
 class UpstashRedisAdapter:
@@ -38,16 +42,22 @@ redis_client: UpstashRedisAdapter = UpstashRedisAdapter(
     token=settings.UPSTASH_REDIS_REST_TOKEN or "",
 )
 
+_RETRY_DELAYS = [1, 2, 4, 8, 16]
+
 
 async def init_redis():
-    """Verify that Redis is connected on startup."""
-    try:
-        await redis_client.ping()
-        print("[REDIS] Redis (Upstash REST) connected successfully.")
-    except Exception as e:
-        print(f"[REDIS] Redis ping failed: {e}")
-        raise
-    return redis_client
+    for attempt, delay in enumerate(_RETRY_DELAYS):
+        try:
+            await redis_client.ping()
+            logger.info("Redis (Upstash REST) connected successfully.")
+            return redis_client
+        except Exception as e:
+            logger.warning("Redis ping attempt %d failed: %s", attempt + 1, e)
+            if attempt < len(_RETRY_DELAYS) - 1:
+                await asyncio.sleep(delay)
+            else:
+                logger.error("Redis failed to connect after %d attempts", len(_RETRY_DELAYS))
+                raise
 
 
 TOKEN_BUCKET_LUA = """
@@ -81,30 +91,53 @@ else
 end
 """
 
+
 async def check_rate_limit(key: str, capacity: int, refill_rate_per_sec: float) -> bool:
-    now = time.time()
-    result = await redis_client.eval(
-        TOKEN_BUCKET_LUA,
-        1,
-        key,
-        str(capacity),
-        str(refill_rate_per_sec),
-        str(now),
-        "1"
-    )
-    return result == 0
+    try:
+        now = time.time()
+        result = await redis_client.eval(
+            TOKEN_BUCKET_LUA,
+            1,
+            key,
+            str(capacity),
+            str(refill_rate_per_sec),
+            str(now),
+            "1"
+        )
+        return result == 0  # type: ignore[no-any-return]
+    except Exception as e:
+        logger.error("Rate limit check failed for key %s: %s", key, e)
+        return False
+
 
 async def get_url_cache(short_code: str) -> dict | None:
-    data = await redis_client.get(f"url:{short_code}")
-    if data:
-        try:
-            return json.loads(data)
-        except Exception:
-            return None
-    return None
+    try:
+        data = await redis_client.get(f"url:{short_code}")
+        if data:
+            return json.loads(data)  # type: ignore[no-any-return]
+        return None
+    except Exception as e:
+        logger.debug("Cache read failed for %s: %s", short_code, e)
+        return None
+
 
 async def set_url_cache(short_code: str, url_data: dict, ttl: int = 86400) -> None:
-    await redis_client.setex(f"url:{short_code}", ttl, json.dumps(url_data))
+    try:
+        await redis_client.setex(f"url:{short_code}", ttl, json.dumps(url_data))
+    except Exception as e:
+        logger.warning("Cache write failed for %s: %s", short_code, e)
+
 
 async def delete_url_cache(short_code: str) -> None:
-    await redis_client.delete(f"url:{short_code}")
+    try:
+        await redis_client.delete(f"url:{short_code}")
+    except Exception as e:
+        logger.debug("Cache delete failed for %s: %s", short_code, e)
+
+
+async def check_redis_health() -> bool:
+    try:
+        await redis_client.ping()
+        return True
+    except Exception:
+        return False

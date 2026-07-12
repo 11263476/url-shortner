@@ -23,7 +23,7 @@ class FavoriteRepository(BaseRepository[Favorite]):
         )
         result = await self.db.execute(stmt)
         await self.db.commit()
-        return result.rowcount > 0
+        return result.rowcount > 0  # type: ignore[attr-defined, no-any-return]
 
     async def count_user_favorites(self, user_id: int) -> int:
         stmt = select(Favorite).where(Favorite.user_id == user_id)

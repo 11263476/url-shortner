@@ -121,7 +121,7 @@ class RedirectService:
                 dest = url_data["ios_url"]
             elif "android" in ua and url_data["android_url"]:
                 dest = url_data["android_url"]
-        return dest
+        return dest  # type: ignore[no-any-return]
 
     async def _handle_one_time(self, url_data: dict):
         if url_data.get("is_one_time"):

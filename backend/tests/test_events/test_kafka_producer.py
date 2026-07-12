@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -13,7 +14,9 @@ class TestKafkaProducer:
         with patch("src.events.kafka.producer", mock_producer), \
              patch("src.events.kafka.serialize", return_value=b"serialized-avro-bytes"):
             await publish_event("url-created", {"short_code": "test"})
-            mock_producer.send_and_wait.assert_called_once()
+            await asyncio.sleep(0)
+
+        mock_producer.send_and_wait.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_publish_event_with_key(self):
@@ -22,7 +25,9 @@ class TestKafkaProducer:
         with patch("src.events.kafka.producer", mock_producer), \
              patch("src.events.kafka.serialize", return_value=b"serialized-avro-bytes"):
             await publish_event("url-created", {"short_code": "test"}, key="test-key")
-            mock_producer.send_and_wait.assert_called_once()
+            await asyncio.sleep(0)
+
+        mock_producer.send_and_wait.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_publish_raw_sends_bytes(self):
@@ -30,9 +35,11 @@ class TestKafkaProducer:
 
         with patch("src.events.kafka.producer", mock_producer):
             await publish_raw("dlq-url-clicked", b"raw-bytes")
-            mock_producer.send_and_wait.assert_called_once_with(
-                "dlq-url-clicked", value=b"raw-bytes", key=None
-            )
+            await asyncio.sleep(0)
+
+        mock_producer.send_and_wait.assert_called_once_with(
+            "dlq-url-clicked", value=b"raw-bytes", key=None
+        )
 
     @pytest.mark.asyncio
     async def test_publish_event_no_producer_returns_gracefully(self):
@@ -45,3 +52,20 @@ class TestKafkaProducer:
         with patch("src.events.kafka.producer", None):
             result = await publish_raw("some-topic", b"data")
             assert result is None
+
+    @pytest.mark.asyncio
+    async def test_publish_event_producer_fails_gracefully(self):
+        mock_producer = AsyncMock()
+        mock_producer.send_and_wait.side_effect = RuntimeError("Kafka unreachable")
+        with patch("src.events.kafka.producer", mock_producer), \
+             patch("src.events.kafka.serialize", return_value=b"bytes"):
+            await publish_event("url-created", {"short_code": "test"})
+            await asyncio.sleep(0)
+
+    @pytest.mark.asyncio
+    async def test_publish_raw_producer_fails_gracefully(self):
+        mock_producer = AsyncMock()
+        mock_producer.send_and_wait.side_effect = RuntimeError("Kafka unreachable")
+        with patch("src.events.kafka.producer", mock_producer):
+            await publish_raw("some-topic", b"data")
+            await asyncio.sleep(0)

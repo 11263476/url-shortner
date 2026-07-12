@@ -138,7 +138,7 @@ class URLShortenerMetrics:
 
 
 # Global metrics instance
-metrics_instance: URLShortenerMetrics = None
+metrics_instance: URLShortenerMetrics | None = None
 
 
 def init_metrics():
@@ -150,18 +150,16 @@ def init_metrics():
 
 
 def get_metrics() -> URLShortenerMetrics:
-    """Get the global metrics instance."""
     if not metrics_instance:
         init_metrics()
-    return metrics_instance
+    return metrics_instance  # type: ignore[return-value]
 
 
 # Convenience functions for metric recording
 
 def record_http_request(method: str, endpoint: str, status_code: int, duration_seconds: float, error: bool = False):
-    """Record HTTP request metrics."""
     m = get_metrics()
-    attributes = {
+    attributes: dict[str, str | int] = {
         "http.method": method,
         "http.endpoint": endpoint,
         "http.status_code": status_code,

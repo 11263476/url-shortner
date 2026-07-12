@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import and_, select
 
@@ -29,5 +29,5 @@ class APIKeyRepository(BaseRepository[APIKey]):
     async def update_last_used(self, id: int) -> None:
         key = await self.get(id)
         if key:
-            key.last_used_at = datetime.utcnow()
+            key.last_used_at = datetime.now(timezone.utc)
             await self.db.commit()

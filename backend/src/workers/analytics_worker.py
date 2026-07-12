@@ -1,6 +1,5 @@
 import asyncio
 import json
-import ssl
 from datetime import datetime
 
 from user_agents import parse
@@ -13,7 +12,7 @@ from src.events.kafka import publish_raw
 from src.events.schemas import deserialize
 from src.log_utils import get_logger, setup_logging
 from src.repositories import AnalyticsRepository, URLRepository
-from src.workers._sni_patch import apply_sni_patch
+from src.workers._sni_patch import _make_sni_context
 from src.workers.kafka_consumer_pool import KafkaConnectionPool
 
 
@@ -39,17 +38,13 @@ async def consume_url_clicked_events():
         kwargs["sasl_plain_password"] = settings.KAFKA_SASL_PASSWORD
 
     if settings.KAFKA_SSL_CA_PATH:
-        context = ssl.create_default_context(cafile=settings.KAFKA_SSL_CA_PATH)
-        context.check_hostname = False
-        kwargs["ssl_context"] = context
+        kwargs["ssl_context"] = _make_sni_context(settings.KAFKA_BOOTSTRAP_SERVERS, settings.KAFKA_SSL_CA_PATH)
 
     try:
         await init_mongodb()
         logger.info("MongoDB initialized")
     except Exception as e:
         logger.warning("MongoDB connection failed (analytics will retry): %s", str(e))
-
-    apply_sni_patch(settings.KAFKA_BOOTSTRAP_SERVERS)
 
     kwargs_without_bootstrap = kwargs.copy()
     kwargs_without_bootstrap.pop('bootstrap_servers', None)

@@ -35,7 +35,7 @@ class WorkspaceMemberRepository(BaseRepository[WorkspaceMember]):
         )
         result = await self.db.execute(stmt)
         await self.db.commit()
-        return result.rowcount > 0
+        return result.rowcount > 0  # type: ignore[attr-defined, no-any-return]
 
     async def get_user_workspace_ids(self, user_id: int) -> list[int]:
         result = await self.db.execute(

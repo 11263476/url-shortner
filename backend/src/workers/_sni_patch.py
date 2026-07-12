@@ -1,69 +1,66 @@
-import asyncio
 import logging
-import weakref
-from typing import Optional
+import ssl
+from typing import Optional, Union
 
-import async_timeout
 
-log = logging.getLogger(__name__)
+class SNIAwareSSLContext(ssl.SSLContext):
+    """SSLContext subclass that injects ``server_hostname`` into every
+    ``wrap_socket`` call so that TLS handshakes include the correct SNI
+    extension.
 
+    aiokafka's internal connection machinery calls ``wrap_socket`` without
+    *server_hostname* when the broker address is an IP instead of a DNS name.
+    Some Kafka providers (e.g. Aiven) rely on SNI for TLS routing, so we
+    always pass the original bootstrap hostname through this subclass.
+    """
+
+    def __init__(self, protocol: int = ssl.PROTOCOL_TLS_CLIENT, *, sni_hostname: Optional[str] = None) -> None:
+        super().__init__(protocol)  # type: ignore[call-arg]
+        self._sni_hostname = sni_hostname
+
+    def wrap_socket(self, sock, server_side: bool = False,
+                    do_handshake_on_connect: bool = True,
+                    suppress_ragged_eofs: bool = True,
+                    server_hostname: Optional[Union[str, bytes]] = None,
+                    session: Optional[ssl.SSLSession] = None):
+        if server_hostname is None and self._sni_hostname:
+            server_hostname = self._sni_hostname
+        return super().wrap_socket(
+            sock, server_side, do_handshake_on_connect,
+            suppress_ragged_eofs, server_hostname, session,
+        )
+
+
+def _extract_hostname(bootstrap_servers: str) -> Optional[str]:
+    hostname = bootstrap_servers.split(":")[0]
+    return hostname if hostname else None
+
+
+def _make_sni_context(bootstrap_servers: str, cafile: str) -> ssl.SSLContext:
+    """Build an SSL context that sends the correct SNI hostname.
+
+    Replaces the old pattern of ``ssl.create_default_context()`` +
+    ``apply_sni_patch()`` with a single ``SNIAwareSSLContext``.
+    """
+    sni_hostname = _extract_hostname(bootstrap_servers)
+    ctx: SNIAwareSSLContext = SNIAwareSSLContext(sni_hostname=sni_hostname)
+    ctx.load_verify_locations(cafile=cafile)
+    ctx.check_hostname = False
+    return ctx
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible no-op — the SNI is now handled by SNIAwareSSLContext
+# directly, so calling apply_sni_patch is no longer necessary.
+# ---------------------------------------------------------------------------
 _PATCHED = False
 
 
-def apply_sni_patch(bootstrap_hostname: Optional[str] = None):
+def apply_sni_patch(bootstrap_hostname: Optional[str] = None) -> None:
     global _PATCHED
     if _PATCHED:
         return
     _PATCHED = True
-
-    if not bootstrap_hostname:
-        log.warning("No bootstrap hostname provided, SNI patch skipped")
-        return
-
-    # Strip port if present
-    sni_hostname = bootstrap_hostname.split(":")[0]
-
-    from aiokafka.conn import READER_LIMIT, AIOKafkaConnection, AIOKafkaProtocol
-
-    original_connect = AIOKafkaConnection.connect
-
-    async def patched_connect(self):
-        loop = asyncio.get_running_loop()
-        self._closed_fut = loop.create_future()
-
-        if self._security_protocol in ("PLAINTEXT", "SASL_PLAINTEXT"):
-            ssl = None
-        else:
-            ssl = self._ssl_context
-
-        reader = asyncio.StreamReader(limit=READER_LIMIT)
-        protocol = AIOKafkaProtocol(self._closed_fut, reader, loop=loop)
-        async with async_timeout.timeout(self._request_timeout):
-            transport, _ = await loop.create_connection(
-                lambda: protocol,
-                self._host,
-                self._port,
-                ssl=ssl,
-                server_hostname=sni_hostname if ssl else None,
-            )
-        writer = asyncio.StreamWriter(transport, protocol, reader, loop)
-        self._reader, self._writer, self._protocol = reader, writer, protocol
-
-        self._read_task = self._create_reader_task()
-        if self._max_idle_ms is not None:
-            self._idle_handle = loop.call_soon(
-                AIOKafkaConnection._idle_check, weakref.ref(self)
-            )
-
-        try:
-            await self._do_version_lookup()
-            if self._security_protocol in ("SASL_SSL", "SASL_PLAINTEXT"):
-                await self._do_sasl_handshake()
-        except BaseException:
-            self.close()
-            raise
-
-        return reader, writer
-
-    AIOKafkaConnection.connect = patched_connect
-    log.info("Applied SNI patch: will use '%s' for all TLS connections", sni_hostname)
+    log = logging.getLogger(__name__)
+    log.info("SNI patch is no longer required — SNIAwareSSLContext handles TLS.")
+    return

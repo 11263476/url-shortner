@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.documents.click_event import ClickEvent
 from src.errors import ForbiddenError, URLNotFound
@@ -36,7 +36,7 @@ class AnalyticsService:
 
     async def get_timeseries(self, short_code: str, user_id: int, days: int = 7):
         await self._get_url_and_verify(short_code, user_id)
-        since = datetime.utcnow() - timedelta(days=days)
+        since = datetime.now(timezone.utc) - timedelta(days=days)
         pipeline = [
             {"$match": {"short_code": short_code, "clicked_at": {"$gte": since}}},
             {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$clicked_at"}}, "clicks": {"$sum": 1}}},

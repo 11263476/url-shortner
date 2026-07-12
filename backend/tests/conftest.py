@@ -1,48 +1,80 @@
+import asyncio
+import os
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
+import pytest
 import pytest_asyncio
-from sqlalchemy import delete
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from src.core.config import settings
 from src.core.security import hash_password
 from src.models.url import URL, URLStatus
 from src.models.user import User
 from src.models.workspace import Workspace
-from src.models.workspace_invite import WorkspaceInvite
-from src.models.workspace_member import WorkspaceMember
-
-_test_engine = create_async_engine(
-    settings.ASYNC_DATABASE_URI,
-    echo=False,
-    poolclass=NullPool,
-)
 
 
-@pytest_asyncio.fixture(autouse=True)
-async def cleanup():
-    """Remove test data before each test to prevent UniqueViolationError."""
-    conn = await _test_engine.connect()
+def pytest_addoption(parser):
+    parser.addoption(
+        "--use-testcontainers",
+        action="store_true",
+        default=False,
+        help="Use Docker testcontainers for Postgres, MongoDB, and Redis",
+    )
+
+
+def pytest_sessionstart(session):
+    if session.config.getoption("--use-testcontainers"):
+        from tests.testcontainers import start_containers
+        start_containers()
+    # Clean all test data once at session start — ensures clean slate
+    # Tests using transaction rollback clean up per-test automatically.
+    # Tests that commit (worker tests) rely on their own cleanup.
+    _clean_db_once()
+
+
+def _clean_db_once():
     try:
-        session = AsyncSession(bind=conn, expire_on_commit=False)
-        await session.execute(delete(URL).where(URL.short_code.in_(["test123", "routetest"])))
-        await session.execute(delete(WorkspaceInvite))
-        await session.execute(delete(WorkspaceMember))
-        await session.execute(
-            delete(Workspace).where(Workspace.name.in_(["Test Workspace", "Route Test Workspace", "Personal Workspace"]))
+        from src.core.config import settings
+        engine = create_async_engine(settings.ASYNC_DATABASE_URI, echo=False, poolclass=NullPool)
+        async def _truncate():
+            conn = await engine.connect()
+            await conn.execute(text("TRUNCATE TABLE urls, workspace_invites, workspace_members, workspaces, users CASCADE"))
+            await conn.commit()
+            await conn.close()
+            await engine.dispose()
+        asyncio.run(_truncate())
+    except Exception:
+        pass  # DB might not be available yet
+
+
+def pytest_sessionfinish(session):
+    if os.environ.get("_USE_TESTCONTAINERS") == "1":
+        from tests.testcontainers import stop_containers
+        stop_containers()
+
+
+_test_engine = None
+
+
+def _get_test_engine():
+    global _test_engine
+    if _test_engine is None:
+        from src.core.config import settings
+        _test_engine = create_async_engine(
+            settings.ASYNC_DATABASE_URI,
+            echo=False,
+            poolclass=NullPool,
         )
-        await session.execute(delete(User).where(User.email.like("%@example.com")))
-        await session.commit()
-        await session.close()
-    finally:
-        await conn.close()
-    yield
+    return _test_engine
 
 
 @pytest_asyncio.fixture
 async def db():
-    conn = await _test_engine.connect()
+    engine = _get_test_engine()
+    conn = await engine.connect()
     await conn.begin()
     session = AsyncSession(bind=conn, expire_on_commit=False, autoflush=False)
     yield session
@@ -89,14 +121,32 @@ async def test_url(db: AsyncSession, test_user: User, test_workspace: Workspace)
 
 
 @pytest_asyncio.fixture(autouse=True)
+async def fast_password_hashing():
+    from passlib.context import CryptContext
+    import src.core.security as _sec
+    fast_ctx = CryptContext(schemes=["sha256_crypt"], sha256_crypt__rounds=1000)
+    original = _sec.pwd_context
+    _sec.pwd_context = fast_ctx
+    yield
+    _sec.pwd_context = original
+
+
+@pytest_asyncio.fixture(autouse=True)
 async def mock_external_services():
-    with patch("src.services.auth_service.redis_client", AsyncMock()), \
-         patch("src.services.auth_service.EmailService.send_verification_email", AsyncMock()), \
-         patch("src.services.auth_service.EmailService.send_password_reset", AsyncMock()), \
-         patch("src.services.url_service.delete_url_cache", AsyncMock()), \
-         patch("src.services.url_service.EventDispatcher", AsyncMock()), \
-         patch("src.services.workspace_service.AuditService", AsyncMock()), \
-         patch("src.services.workspace_service.WebhookService", AsyncMock()):
+    import contextlib
+    patches = [
+        patch("src.services.auth_service.EmailService.send_verification_email", AsyncMock()),
+        patch("src.services.auth_service.EmailService.send_password_reset", AsyncMock()),
+        patch("src.services.url_service.delete_url_cache", AsyncMock()),
+        patch("src.services.url_service.EventDispatcher", AsyncMock()),
+        patch("src.services.workspace_service.AuditService", AsyncMock()),
+        patch("src.services.workspace_service.WebhookService", AsyncMock()),
+    ]
+    if os.environ.get("_USE_TESTCONTAINERS") != "1":
+        patches.insert(0, patch("src.services.auth_service.redis_client", AsyncMock()))
+    with contextlib.ExitStack() as stack:
+        for p in patches:
+            stack.enter_context(p)
         yield
 
 
@@ -132,6 +182,16 @@ async def mock_audit():
 async def mock_webhooks():
     from src.services.webhook_service import WebhookService
     return AsyncMock(spec=WebhookService)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def mock_mongodb():
+    if os.environ.get("_USE_TESTCONTAINERS") == "1":
+        yield
+    else:
+        from tests.mock_mongodb import _AsyncMongoClientWrapper
+        with patch("src.core.mongodb.AsyncIOMotorClient", _AsyncMongoClientWrapper):
+            yield
 
 
 @pytest_asyncio.fixture

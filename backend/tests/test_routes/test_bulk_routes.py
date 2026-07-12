@@ -99,7 +99,7 @@ class TestBulkRoutes:
             params={"workspace_id": test_workspace.id, "format": "csv"},
         )
         assert resp.status_code == status.HTTP_200_OK
-        assert resp.headers["content-type"] == "text/csv"
+        assert resp.headers["content-type"].startswith("text/csv")
         assert "filename=urls_export.csv" in resp.headers.get("content-disposition", "")
 
     async def test_bulk_export_json(self, client, test_workspace):

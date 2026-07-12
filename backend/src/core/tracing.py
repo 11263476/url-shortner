@@ -14,12 +14,14 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from src.core.config import settings
+from src.log_utils import get_logger
+
+logger = get_logger(__name__)
 
 
 def init_tracing():
-    """Initialize OpenTelemetry tracing with OTLP exporter to Grafana Cloud Tempo."""
     if not settings.PROMETHEUS_ENABLED:
-        print("[TRACING] Tracing disabled, using no-op tracer")
+        logger.info("Tracing disabled, using no-op tracer")
         trace.set_tracer_provider(TracerProvider())
         return
 
@@ -33,7 +35,6 @@ def init_tracing():
     try:
         headers = {}
         if settings.OTEL_EXPORTER_OTLP_HEADERS:
-            # Parse headers string "Authorization=Basic xxx" into dict
             for pair in settings.OTEL_EXPORTER_OTLP_HEADERS.split(","):
                 if "=" in pair:
                     k, v = pair.split("=", 1)
@@ -47,16 +48,15 @@ def init_tracing():
         tracer_provider = TracerProvider(resource=resource)
         tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
         trace.set_tracer_provider(tracer_provider)
-        print(f"[TRACING] OpenTelemetry initialized with OTLP at {settings.OTEL_EXPORTER_OTLP_ENDPOINT}")
+        logger.info("OpenTelemetry initialized with OTLP at %s", settings.OTEL_EXPORTER_OTLP_ENDPOINT)
     except Exception as e:
-        print(f"[TRACING] Failed to initialize OTLP exporter: {e}")
+        logger.warning("Failed to initialize OTLP exporter: %s", e)
         trace.set_tracer_provider(TracerProvider(resource=resource))
 
 
 def init_metrics():
-    """Initialize OpenTelemetry metrics with Prometheus exporter."""
     if not settings.PROMETHEUS_ENABLED:
-        print("[METRICS] Prometheus disabled, using no-op meter")
+        logger.info("Prometheus disabled, using no-op meter")
         metrics.set_meter_provider(MeterProvider())
         return
 
@@ -68,10 +68,10 @@ def init_metrics():
         })
         meter_provider = MeterProvider(metric_readers=[prometheus_reader], resource=resource)
         metrics.set_meter_provider(meter_provider)
-        print("[METRICS] OpenTelemetry Prometheus metrics initialized")
+        logger.info("OpenTelemetry Prometheus metrics initialized")
         return prometheus_reader
     except Exception as e:
-        print(f"[METRICS] Failed to initialize Prometheus exporter: {e}")
+        logger.warning("Failed to initialize Prometheus exporter: %s", e)
         metrics.set_meter_provider(MeterProvider())
         return None
 
@@ -79,29 +79,29 @@ def init_metrics():
 def instrument_fastapi(app):
     try:
         FastAPIInstrumentor.instrument_app(app, excluded_urls="/health|/metrics")
-        print("[INSTRUMENTATION] FastAPI instrumented")
+        logger.info("FastAPI instrumented")
     except Exception as e:
-        print(f"[INSTRUMENTATION] Failed to instrument FastAPI: {e}")
+        logger.warning("Failed to instrument FastAPI: %s", e)
 
 
 def instrument_sqlalchemy(engine):
     try:
         SQLAlchemyInstrumentor().instrument(engine=engine, service=settings.PROJECT_NAME)
-        print("[INSTRUMENTATION] SQLAlchemy instrumented")
+        logger.info("SQLAlchemy instrumented")
     except Exception as e:
-        print(f"[INSTRUMENTATION] Failed to instrument SQLAlchemy: {e}")
+        logger.warning("Failed to instrument SQLAlchemy: %s", e)
 
 
 def instrument_redis(client):
     try:
         RedisInstrumentor().instrument(client=client, service=settings.PROJECT_NAME)
-        print("[INSTRUMENTATION] Redis instrumented")
+        logger.info("Redis instrumented")
     except Exception as e:
-        print(f"[INSTRUMENTATION] Failed to instrument Redis: {e}")
+        logger.warning("Failed to instrument Redis: %s", e)
 
 
 def get_tracer(name: str) -> trace.Tracer:
-    return trace.get_tracer(name, version="1.0.0")
+    return trace.get_tracer(name, version="1.0.0")  # type: ignore[call-arg]
 
 
 def get_meter(name: str) -> metrics.Meter:

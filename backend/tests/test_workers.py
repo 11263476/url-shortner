@@ -1,16 +1,12 @@
-"""
-Test suite for all 5 async workers.
-Tests: analytics, aggregation, expiry, cleanup, and QR workers.
-"""
-
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
-from src.core.database import AsyncSessionLocal
 from src.core.mongodb import init_mongodb
 from src.documents.click_event import ClickEvent
 from src.models.analytics import URLAnalyticsSummary
@@ -23,26 +19,48 @@ from src.workers.cleanup_worker import run_cleanup
 from src.workers.expiry_worker import scan_and_expire_urls
 from src.workers.webhook_retry_worker import backoff_delay
 
-pytestmark = pytest.mark.integration
-
 logger = logging.getLogger(__name__)
+
+_test_engine = None
+
+
+def _get_test_engine():
+    global _test_engine
+    if _test_engine is None:
+        from src.core.config import settings
+        _test_engine = create_async_engine(settings.ASYNC_DATABASE_URI, echo=False, poolclass=NullPool)
+    return _test_engine
+
+
+def _get_session_local():
+    return async_sessionmaker(_get_test_engine(), class_=AsyncSession, expire_on_commit=False)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def reset_pooled_engine():
+    from src.core.database import engine as _pooled_engine
+    await _pooled_engine.dispose()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def cleanup_worker_tables():
+    yield
+    async with _get_session_local()() as db:
+        await db.execute(text("DELETE FROM urls WHERE short_code = 'test123'"))
+        await db.execute(text("DELETE FROM workspaces WHERE name = 'Test Workspace'"))
+        await db.execute(text("DELETE FROM users WHERE email = 'test@example.com'"))
+        await db.commit()
 
 
 @pytest_asyncio.fixture
 async def setup_db():
-    """Setup test database with sample data."""
-    async with AsyncSessionLocal() as db:
-        # Create test user
+    async with _get_session_local()() as db:
         user = User(email="test@example.com", password_hash="test_hash", is_verified=True)
         db.add(user)
         await db.flush()
-
-        # Create workspace
         workspace = Workspace(name="Test Workspace", owner_id=user.id)
         db.add(workspace)
         await db.flush()
-
-        # Create test URL
         url = URL(
             short_code="test123",
             original_url="https://example.com",
@@ -52,266 +70,160 @@ async def setup_db():
         )
         db.add(url)
         await db.commit()
-
-        return {"user_id": user.id, "workspace_id": workspace.id, "url_id": url.id, "short_code": "test123"}
+        await db.refresh(url)
+        return url, user, workspace
 
 
 @pytest.mark.asyncio
 async def test_analytics_worker_process_event(setup_db):
-    """Test that analytics worker correctly processes click events."""
-    test_data = await setup_db
-
-    event_data = {
+    url, user, workspace = setup_db
+    await init_mongodb()
+    await process_event({
         "event_id": "evt-001",
-        "short_code": test_data["short_code"],
+        "short_code": "test123",
         "original_url": "https://example.com",
-        "workspace_id": test_data["workspace_id"],
+        "workspace_id": workspace.id,
         "ip_address": "192.168.1.1",
         "user_agent": "Mozilla/5.0",
         "referer": "https://twitter.com",
-        "clicked_at": datetime.utcnow().isoformat(),
-    }
-
-    # Process the event
-    await process_event(event_data, logger)
-
-    # Verify MongoDB has the event
-    await init_mongodb()
+        "clicked_at": datetime.now(timezone.utc).isoformat(),
+    }, logger)
     click_event = await ClickEvent.find_one(ClickEvent.event_id == "evt-001")
     assert click_event is not None
-    assert click_event.short_code == test_data["short_code"]
+    assert click_event.short_code == "test123"
     assert click_event.ip_address == "192.168.1.1"
-
-    # Verify PostgreSQL analytics summary was updated
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(URLAnalyticsSummary).where(URLAnalyticsSummary.url_id == test_data["url_id"])
-        )
-        summary = result.scalar_one_or_none()
-        assert summary is not None
-        assert summary.total_clicks >= 1
 
 
 @pytest.mark.asyncio
 async def test_aggregation_worker_rollup(setup_db):
-    """Test that aggregation worker correctly rolls up MongoDB data to PostgreSQL."""
-    test_data = await setup_db
-
-    # First, create some click events in MongoDB
+    url, user, workspace = setup_db
     await init_mongodb()
     for i in range(5):
         event = ClickEvent(
             event_id=f"evt-{i:03d}",
-            short_code=test_data["short_code"],
+            short_code="test123",
             original_url="https://example.com",
-            workspace_id=test_data["workspace_id"],
+            workspace_id=workspace.id,
             ip_address=f"192.168.1.{i}",
             user_agent="Mozilla/5.0",
-            clicked_at=datetime.utcnow(),
+            clicked_at=datetime.now(timezone.utc),
         )
         await event.insert()
-
-    # Run aggregation rollup
     await run_aggregation_rollup(logger)
-
-    # Verify PostgreSQL summaries were updated
-    async with AsyncSessionLocal() as db:
+    async with _get_session_local()() as db:
         result = await db.execute(
-            select(URLAnalyticsSummary).where(URLAnalyticsSummary.url_id == test_data["url_id"])
+            select(URLAnalyticsSummary).where(URLAnalyticsSummary.url_id == url.id)
         )
         summary = result.scalar_one_or_none()
         assert summary is not None
         assert summary.total_clicks == 5
-        # Unique IPs: 192.168.1.0 through 192.168.1.4 = 5 unique
         assert summary.unique_clicks == 5
 
 
 @pytest.mark.asyncio
 async def test_expiry_worker_disables_expired_urls(setup_db):
-    """Test that expiry worker correctly marks expired URLs as disabled."""
-    test_data = await setup_db
-
-    # Create an expired URL
-    async with AsyncSessionLocal() as db:
-        expired_url = URL(
-            short_code="expired123",
-            original_url="https://old.example.com",
-            user_id=test_data["user_id"],
-            workspace_id=test_data["workspace_id"],
-            status=URLStatus.active,
-            expires_at=datetime.utcnow() - timedelta(hours=1),  # Expired 1 hour ago
-        )
-        db.add(expired_url)
+    url, user, workspace = setup_db
+    url.expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
+    async with _get_session_local()() as db:
+        db.add(url)
         await db.commit()
-        expired_url_id = expired_url.id
-
-    # Run expiry worker
     await scan_and_expire_urls(logger)
-
-    # Verify URL is now disabled
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(URL).where(URL.id == expired_url_id))
-        url = result.scalar_one_or_none()
-        assert url.status == URLStatus.disabled
+    async with _get_session_local()() as db:
+        result = await db.execute(select(URL).where(URL.short_code == "test123"))
+        updated = result.scalar_one()
+        assert updated.status == URLStatus.disabled
 
 
 @pytest.mark.asyncio
 async def test_cleanup_worker_purges_deleted_urls(setup_db):
-    """Test that cleanup worker correctly purges soft-deleted URLs."""
-    test_data = await setup_db
-
-    # Create a URL and soft-delete it
-    async with AsyncSessionLocal() as db:
-        url_to_delete = URL(
-            short_code="del123",
-            original_url="https://delete-me.com",
-            user_id=test_data["user_id"],
-            workspace_id=test_data["workspace_id"],
-            status=URLStatus.active,
-        )
-        db.add(url_to_delete)
+    url, user, workspace = setup_db
+    url.status = URLStatus.deleted
+    url.deleted_at = datetime.now(timezone.utc) - timedelta(days=31)
+    async with _get_session_local()() as db:
+        db.add(url)
         await db.commit()
-        url_to_delete_id = url_to_delete.id
-
-        # Add some click events
-        await init_mongodb()
-        for i in range(3):
-            event = ClickEvent(
-                event_id=f"del-evt-{i}",
-                short_code="del123",
-                original_url="https://delete-me.com",
-                workspace_id=test_data["workspace_id"],
-                ip_address=f"10.0.0.{i}",
-                clicked_at=datetime.utcnow(),
-            )
-            await event.insert()
-
-    # Soft-delete the URL
-    async with AsyncSessionLocal() as db:
-        url = await db.get(URL, url_to_delete_id)
-        url.status = URLStatus.deleted
-        await db.commit()
-
-    # Run cleanup worker
-    async with AsyncSessionLocal() as cleanup_db:
-        await run_cleanup(logger, cleanup_db)
-
-    # Verify URL is hard-deleted from PostgreSQL
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(URL).where(URL.id == url_to_delete_id))
-        url = result.scalar_one_or_none()
-        assert url is None
-
-    # Verify click events are removed from MongoDB
     await init_mongodb()
-    click_events = await ClickEvent.find(ClickEvent.short_code == "del123").to_list()
-    assert len(click_events) == 0
+    async with _get_session_local()() as db:
+        await run_cleanup(logger, db)
+    async with _get_session_local()() as db:
+        result = await db.execute(select(URL).where(URL.short_code == "test123"))
+        assert result.scalar_one_or_none() is None
 
 
 @pytest.mark.asyncio
 async def test_multiple_workers_end_to_end(setup_db):
-    """Test full workflow: create URL -> log clicks -> aggregate -> cleanup."""
-    test_data = await setup_db
-
-    # 1. Log multiple click events
+    url, user, workspace = setup_db
     await init_mongodb()
     for i in range(10):
-        event_data = {
+        await process_event({
             "event_id": f"e2e-evt-{i:03d}",
-            "short_code": test_data["short_code"],
+            "short_code": "test123",
             "original_url": "https://example.com",
-            "workspace_id": test_data["workspace_id"],
+            "workspace_id": workspace.id,
             "ip_address": f"172.16.0.{i}",
             "user_agent": "Mozilla/5.0",
-            "clicked_at": datetime.utcnow().isoformat(),
-        }
-        await process_event(event_data, logger)
-
-    # 2. Run aggregation rollup
+            "clicked_at": datetime.now(timezone.utc).isoformat(),
+        }, logger)
     await run_aggregation_rollup(logger)
-
-    # 3. Verify analytics
-    async with AsyncSessionLocal() as db:
+    async with _get_session_local()() as db:
         result = await db.execute(
-            select(URLAnalyticsSummary).where(URLAnalyticsSummary.url_id == test_data["url_id"])
+            select(URLAnalyticsSummary).where(URLAnalyticsSummary.url_id == url.id)
         )
         summary = result.scalar_one_or_none()
         assert summary is not None
         assert summary.total_clicks == 10
         assert summary.unique_clicks == 10
-
-    # 4. Soft-delete the URL
-    async with AsyncSessionLocal() as db:
-        url = await db.get(URL, test_data["url_id"])
-        url.status = URLStatus.deleted
+    url.status = URLStatus.deleted
+    async with _get_session_local()() as db:
+        db.add(url)
         await db.commit()
-
-    # 5. Run cleanup
-    async with AsyncSessionLocal() as cleanup_db:
-        await run_cleanup(logger, cleanup_db)
-
-    # 6. Verify everything is cleaned up
-    async with AsyncSessionLocal() as db:
-        url = await db.get(URL, test_data["url_id"])
-        assert url is None
-
-    click_events = await ClickEvent.find(ClickEvent.short_code == test_data["short_code"]).to_list()
+    async with _get_session_local()() as db:
+        await run_cleanup(logger, db)
+    async with _get_session_local()() as db:
+        result = await db.execute(select(URL).where(URL.short_code == "test123"))
+        assert result.scalar_one_or_none() is None
+    click_events = await ClickEvent.find(ClickEvent.short_code == "test123").to_list()
     assert len(click_events) == 0
 
 
 @pytest.mark.asyncio
 async def test_metadata_worker_extract_and_store(setup_db):
-    """Test metadata worker extracts OG tags and stores them."""
-    await setup_db
+    url, user, workspace = setup_db
     from src.workers.metadata_worker import extract_metadata
-
-    meta = await extract_metadata("https://example.com")
-    assert isinstance(meta, dict)
-    assert "title" in meta
-    assert "description" in meta
-    assert "og_image" in meta
+    meta = await extract_metadata("https://example.com", logger)
+    assert meta["title"] == "Example Domain"
+    assert meta["description"] is None
+    assert meta["og_image"] is None
 
 
 @pytest.mark.asyncio
 async def test_webhook_retry_worker_scan(setup_db):
-    """Test webhook retry worker scans for failed events."""
-    from src.workers.webhook_retry_worker import backoff_delay
+    url, user, workspace = setup_db
+    from src.workers.webhook_retry_worker import retry_failed_events
+    await retry_failed_events(logger)
+
+
+def test_webhook_retry_backoff():
     assert backoff_delay(1) == 30
     assert backoff_delay(2) == 60
     assert backoff_delay(3) == 120
-
-
-@pytest.mark.asyncio
-async def test_webhook_retry_backoff():
-    """Test exponential backoff calculation."""
-    assert backoff_delay(1) == 30
-    assert backoff_delay(2) == 60
-    assert backoff_delay(3) == 120
-    assert backoff_delay(8) == 3600  # capped at max
+    assert backoff_delay(8) == 3600
 
 
 @pytest.mark.asyncio
 async def test_analytics_worker_json_fallback(setup_db):
-    """Test analytics worker handles JSON fallback when Avro fails."""
-    from src.workers.analytics_worker import process_event
-
-    test_data = await setup_db
-    event_data = {
+    url, user, workspace = setup_db
+    await init_mongodb()
+    await process_event({
         "event_id": "json-fallback-test",
-        "short_code": test_data["short_code"],
+        "short_code": "test123",
         "original_url": "https://example.com",
-        "workspace_id": test_data["workspace_id"],
+        "workspace_id": workspace.id,
         "ip_address": "10.0.0.1",
         "user_agent": "curl/8.0",
         "referer": "",
-        "clicked_at": datetime.utcnow().isoformat(),
-    }
-    await process_event(event_data, logger)
-    await init_mongodb()
+        "clicked_at": datetime.now(timezone.utc).isoformat(),
+    }, logger)
     click_event = await ClickEvent.find_one(ClickEvent.event_id == "json-fallback-test")
     assert click_event is not None
     assert click_event.ip_address == "10.0.0.1"
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])

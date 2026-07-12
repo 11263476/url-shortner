@@ -12,6 +12,7 @@ from src.errors import (
     WorkspaceNotFound,
 )
 from src.events.dispatcher import EventDispatcher
+from src.log_utils import get_logger
 from src.models.url import URL, URLStatus
 from src.repositories.folder_repository import FolderRepository
 from src.repositories.tag_repository import TagRepository
@@ -20,6 +21,8 @@ from src.repositories.workspace_repository import WorkspaceRepository
 from src.services.audit_service import AuditService
 from src.services.webhook_service import WebhookService
 from src.utils.base62 import hashid_encode
+
+logger = get_logger(__name__)
 
 RESERVED_ALIASES = {"admin", "api", "login", "register", "logout", "verify", "reset", "health", "metrics", "dashboard"}
 
@@ -68,6 +71,7 @@ class URLService:
         else:
             result = await self.db.execute(text("SELECT nextval('url_short_code_seq')"))
             seq_value = result.scalar()
+            assert seq_value is not None
             short_code = hashid_encode(seq_value, settings.SECRET_KEY)
 
         password_hash = hash_password(payload.password) if payload.password else None
@@ -98,7 +102,8 @@ class URLService:
 
         self.db.add(url)
         await self.db.commit()
-        url = await self.url_repo.get(url.id)
+        url = await self.url_repo.get(url.id)  # type: ignore[assignment]
+        assert url is not None
         _ = [t.name for t in url.tags]
 
         try:
@@ -110,7 +115,7 @@ class URLService:
                 "base_url": settings.FRONTEND_URL,
             }, key=url.short_code)
         except Exception as e:
-            print(f"[WARNING] Failed to publish url-created event: {e}")
+            logger.warning("Failed to publish url-created event: %s", e)
 
         try:
             await self.audit.log(
@@ -119,9 +124,10 @@ class URLService:
                 workspace_id=payload.workspace_id,
             )
         except Exception as e:
-            print(f"[WARNING] Audit log failed: {e}")
+            logger.warning("Audit log failed: %s", e)
             await self.db.rollback()
-            url = await self.url_repo.get(url.id)
+            url = await self.url_repo.get(url.id)  # type: ignore[assignment]
+            assert url is not None
             _ = [t.name for t in url.tags]
 
         try:
@@ -130,12 +136,13 @@ class URLService:
                 "workspace_id": url.workspace_id, "user_id": user_id,
             })
         except Exception as e:
-            print(f"[WARNING] Webhook delivery failed: {e}")
+            logger.warning("Webhook delivery failed: %s", e)
             await self.db.rollback()
-            url = await self.url_repo.get(url.id)
+            url = await self.url_repo.get(url.id)  # type: ignore[assignment]
+            assert url is not None
             _ = [t.name for t in url.tags]
 
-        return url
+        return url  # type: ignore[return-value]
 
     async def list(self, workspace_id: int | None, user_id: int, **filters) -> dict:
         if workspace_id is not None:
@@ -180,7 +187,7 @@ class URLService:
             url.tags = db_tags
         await self.db.commit()
         await delete_url_cache(url.short_code)
-        url = await self.url_repo.get(url.id)
+        url = await self.url_repo.get(url.id)  # type: ignore[assignment]
         _ = [t.name for t in url.tags]
         after = {"original_url": url.original_url, "status": url.status.value, "folder_id": url.folder_id}
         try:
@@ -190,7 +197,7 @@ class URLService:
                 workspace_id=url.workspace_id,
             )
         except Exception as e:
-            print(f"[WARNING] Audit log failed: {e}")
+            logger.warning("Audit log failed: %s", e)
             await self.db.rollback()
 
         try:
@@ -199,10 +206,12 @@ class URLService:
                 "workspace_id": url.workspace_id, "user_id": user_id,
             })
         except Exception as e:
-            print(f"[WARNING] Webhook delivery failed: {e}")
+            logger.warning("Webhook delivery failed: %s", e)
             await self.db.rollback()
 
-        return await self.url_repo.get(url.id)
+        result = await self.url_repo.get(url.id)
+        assert result is not None
+        return result
 
     async def update_qr(self, id: int, qr_b64: str, user_id: int) -> None:
         await self.get(id, user_id)
@@ -219,7 +228,7 @@ class URLService:
                 workspace_id=url.workspace_id,
             )
         except Exception as e:
-            print(f"[WARNING] Audit log failed: {e}")
+            logger.warning("Audit log failed: %s", e)
             await self.db.rollback()
 
         try:
@@ -228,5 +237,5 @@ class URLService:
                 "workspace_id": url.workspace_id, "user_id": user_id,
             })
         except Exception as e:
-            print(f"[WARNING] Webhook delivery failed: {e}")
+            logger.warning("Webhook delivery failed: %s", e)
             await self.db.rollback()

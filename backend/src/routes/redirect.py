@@ -1,13 +1,21 @@
+import re
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Header, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from src.core.config import settings
 from src.core.deps import get_redirect_service
+from src.core.redis import check_rate_limit
 from src.errors import RateLimitError, URLDisabled, URLExpired, URLNotFound, URLPasswordIncorrect
+from src.log_utils import get_logger
 from src.services.redirect_service import RedirectService
 
+logger = get_logger(__name__)
+
 router = APIRouter(tags=["Redirection"])
+
+_SHORT_CODE_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,32}$")
 
 PASSWORD_PROTECTION_HTML = """
 <!DOCTYPE html>
@@ -71,6 +79,26 @@ PASSWORD_PROTECTION_HTML = """
 """
 
 
+def _validate_short_code(short_code: str) -> None:
+    if not _SHORT_CODE_PATTERN.match(short_code):
+        raise URLNotFound()
+
+
+def _check_same_origin(request: Request) -> None:
+    """Reject requests whose ``Referer`` does not match the backend origin."""
+    from urllib.parse import urlparse
+
+    referer = request.headers.get("Referer")
+    if not referer:
+        return
+    backend_url = settings.BACKEND_URL.rstrip("/")
+    backend_origin = urlparse(backend_url).hostname or ""
+    referer_host = urlparse(referer).hostname or ""
+    if referer_host and referer_host != backend_origin:
+        from src.errors import URLNotFound as _CSRFError
+        raise _CSRFError()
+
+
 async def _resolve_and_redirect(
     short_code: str,
     ip: str,
@@ -79,6 +107,7 @@ async def _resolve_and_redirect(
     pwd: Optional[str],
     svc: RedirectService,
 ):
+    _validate_short_code(short_code)
     try:
         result = await svc.resolve(short_code, ip, user_agent, referer, pwd)
         return RedirectResponse(url=result.destination, status_code=302)
@@ -108,7 +137,8 @@ async def redirect_to_url(
     svc: RedirectService = Depends(get_redirect_service),
 ):
     x_forwarded_for = request.headers.get("X-Forwarded-For")
-    ip = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else request.client.host
+    client_host = request.client.host if request.client else "127.0.0.1"
+    ip = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else client_host
 
     return await _resolve_and_redirect(short_code, ip, user_agent, referer, None, svc)
 
@@ -125,7 +155,14 @@ async def redirect_with_password(
     referer: Optional[str] = Header(None),
     svc: RedirectService = Depends(get_redirect_service),
 ):
+    _check_same_origin(request)
     x_forwarded_for = request.headers.get("X-Forwarded-For")
-    ip = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else request.client.host
+    client_host = request.client.host if request.client else "127.0.0.1"
+    ip = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else client_host
+
+    rate_key = f"pw_attempt:{ip}:{short_code}"
+    limited = await check_rate_limit(rate_key, capacity=10, refill_rate_per_sec=1.0 / 6.0)
+    if limited:
+        raise RateLimitError()
 
     return await _resolve_and_redirect(short_code, ip, user_agent, referer, pwd, svc)

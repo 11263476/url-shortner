@@ -7,7 +7,7 @@ from src.documents.click_event import ClickEvent
 
 async def init_mongodb():
     """Initialize Beanie ODM with Motor async client."""
-    client = AsyncIOMotorClient(
+    client: AsyncIOMotorClient = AsyncIOMotorClient(  # type: ignore[var-annotated]
         settings.MONGODB_URI,
         serverSelectionTimeoutMS=5000,
     )

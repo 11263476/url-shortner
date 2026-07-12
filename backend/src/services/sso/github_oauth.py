@@ -38,7 +38,7 @@ class GitHubOAuthProvider:
             )
             if resp.status_code != 200:
                 return None
-            return resp.json()
+            return resp.json()  # type: ignore[no-any-return]
 
     async def get_user_info(self, access_token: str) -> dict | None:
         headers = {

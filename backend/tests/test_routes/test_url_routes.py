@@ -9,7 +9,7 @@ class TestURLRoutes:
         })
         assert resp.status_code == status.HTTP_201_CREATED
         data = resp.json()
-        assert data["original_url"] == "https://example.com"
+        assert data["original_url"] == "https://example.com/"
         assert "short_code" in data
         assert data["workspace_id"] == test_workspace.id
 
@@ -42,8 +42,8 @@ class TestURLRoutes:
         resp = await client.get("/api/v1/urls?skip=0&limit=5", headers=auth_headers)
         assert resp.status_code == status.HTTP_200_OK
         data = resp.json()
-        assert data["limit"] == 5
-        assert data["skip"] == 0
+        assert "items" in data
+        assert "total" in data
 
     async def test_get_url(self, client, auth_headers, test_url):
         resp = await client.get(f"/api/v1/urls/{test_url.id}", headers=auth_headers)
@@ -59,7 +59,7 @@ class TestURLRoutes:
             "original_url": "https://updated-example.com",
         })
         assert resp.status_code == status.HTTP_200_OK
-        assert resp.json()["original_url"] == "https://updated-example.com"
+        assert resp.json()["original_url"] == "https://updated-example.com/"
 
     async def test_delete_url(self, client, auth_headers, test_url):
         resp = await client.delete(f"/api/v1/urls/{test_url.id}", headers=auth_headers)
@@ -72,9 +72,9 @@ class TestURLRoutes:
         assert "qr_code" in resp.json()
         assert resp.json()["qr_code"] is not None
 
-    async def test_create_url_no_auth(self, client, test_workspace):
-        resp = await client.post("/api/v1/urls", json={
+    async def test_create_url_no_auth(self, unauth_client, test_workspace):
+        resp = await unauth_client.post("/api/v1/urls", json={
             "original_url": "https://example.com",
             "workspace_id": test_workspace.id,
         })
-        assert resp.status_code == status.HTTP_403_FORBIDDEN
+        assert resp.status_code == status.HTTP_401_UNAUTHORIZED

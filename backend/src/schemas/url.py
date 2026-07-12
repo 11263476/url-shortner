@@ -57,8 +57,8 @@ class URLResponse(BaseModel):
         if isinstance(v, list):
             if len(v) > 0 and hasattr(v[0], 'name'):
                 return [t.name for t in v]
-            return v
-        return v
+            return v  # type: ignore[no-any-return]
+        return v  # type: ignore[no-any-return]
 
     @field_serializer("tags", when_used="json-unless-none")
     def serialize_tags(self, v) -> List[str]:
@@ -66,7 +66,7 @@ class URLResponse(BaseModel):
             return []
         if isinstance(v, list) and len(v) > 0 and hasattr(v[0], 'name'):
             return [t.name for t in v]
-        return v
+        return v  # type: ignore[no-any-return]
 
 
 class URLListResponse(BaseModel):

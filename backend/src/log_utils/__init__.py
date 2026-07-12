@@ -6,7 +6,7 @@ Integrates with Loki for centralized log aggregation.
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -29,7 +29,7 @@ class CorrelationIdFilter(logging.Filter):
 class JSONFormatter(jsonlogger.JsonFormatter):
     def add_fields(self, log_record, record, message_dict):
         super().add_fields(log_record, record, message_dict)
-        log_record['timestamp'] = datetime.utcnow().isoformat() + "Z"
+        log_record['timestamp'] = datetime.now(timezone.utc).isoformat() + "Z"
         log_record['service'] = settings.PROJECT_NAME
         log_record['environment'] = settings.ENVIRONMENT
         log_record['version'] = "1.0.0"
@@ -47,7 +47,7 @@ def setup_logging(correlation_id: Optional[str] = None):
     logger.setLevel(log_level)
     logger.handlers.clear()
     formatter = JSONFormatter(fmt='%(timestamp)s %(level)s %(name)s %(message)s', timestamp=True)
-    correlation_filter = CorrelationIdFilter(correlation_id)
+    correlation_filter: logging.Filter = CorrelationIdFilter(correlation_id)
 
     # Drop DEBUG in production
     if is_prod:
@@ -80,7 +80,7 @@ def setup_logging(correlation_id: Optional[str] = None):
             loki_handler.addFilter(correlation_filter)
             logger.addHandler(loki_handler)
         except Exception as e:
-            print(f"[LOGGING] Loki handler not available: {e}")
+            logger.warning("Loki handler not available: %s", e)
 
     logger.addFilter(correlation_filter)
     return logger

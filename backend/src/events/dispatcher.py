@@ -1,6 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
+from src.log_utils import get_logger
+
+logger = get_logger(__name__)
+
 
 class EventDispatcher(ABC):
     @abstractmethod
@@ -14,7 +18,7 @@ class KafkaEventDispatcher(EventDispatcher):
         try:
             await publish_event(topic, value, key=key)
         except Exception as e:
-            print(f"[WARNING] Failed to publish event to {topic}: {e}")
+            logger.error("Failed to dispatch event to %s: %s", topic, e)
 
 
 class NullEventDispatcher(EventDispatcher):

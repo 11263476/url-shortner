@@ -45,7 +45,7 @@ class GoogleOAuthProvider:
                 if resp.status_code != 200:
                     logger.error(f"Google token exchange failed: {resp.status_code} - {resp.text}")
                     return None
-                return resp.json()
+                return resp.json()  # type: ignore[no-any-return]
             except Exception as e:
                 logger.error(f"Google token exchange error: {e}")
                 return None

@@ -37,7 +37,7 @@ class URLRepository(BaseRepository[URL]):
         skip: int = 0,
         limit: int = 100,
         user_id: int | None = None,
-    ) -> list[URL]:
+    ) -> dict[str, object]:
         query = select(URL).where(URL.status != URLStatus.deleted)
         if workspace_id is not None:
             query = query.where(URL.workspace_id == workspace_id)
@@ -98,7 +98,7 @@ class URLRepository(BaseRepository[URL]):
                 and_(URL.id.in_(url_ids), URL.workspace_id == workspace_id)
             )
         )
-        return result.all()
+        return list(result.all())  # type: ignore[arg-type]
 
     async def get_url_id_by_short_code(self, short_code: str) -> int | None:
         result = await self.db.execute(select(URL.id).where(URL.short_code == short_code))

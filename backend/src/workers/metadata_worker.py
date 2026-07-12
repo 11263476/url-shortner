@@ -1,6 +1,5 @@
 import asyncio
 import json
-import ssl
 from urllib.parse import urlparse
 
 import httpx
@@ -12,12 +11,12 @@ from src.events.kafka import publish_raw
 from src.events.schemas import deserialize
 from src.log_utils import get_logger, setup_logging
 from src.repositories import URLRepository
-from src.workers._sni_patch import apply_sni_patch
+from src.workers._sni_patch import _make_sni_context
 from src.workers.kafka_consumer_pool import KafkaConnectionPool
 
 
-async def extract_metadata(url: str, logger) -> dict:
-    result = {"title": None, "description": None, "og_image": None}
+async def extract_metadata(url: str, logger) -> dict[str, str | None]:
+    result: dict[str, str | None] = {"title": None, "description": None, "og_image": None}
     try:
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
             resp = await client.get(url, headers={"User-Agent": "LinkForgeBot/1.0"})
@@ -30,12 +29,12 @@ async def extract_metadata(url: str, logger) -> dict:
                 result["title"] = soup.title.string.strip()[:500] if soup.title.string else None
 
             meta_desc = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", attrs={"property": "og:description"})
-            if meta_desc and meta_desc.get("content"):
-                result["description"] = meta_desc["content"].strip()[:1000]
+            if meta_desc and meta_desc.get("content"):  # type: ignore[union-attr]
+                result["description"] = meta_desc["content"].strip()[:1000]  # type: ignore[union-attr, index]
 
             og_image = soup.find("meta", attrs={"property": "og:image"})
-            if og_image and og_image.get("content"):
-                raw = og_image["content"].strip()
+            if og_image and og_image.get("content"):  # type: ignore[union-attr]
+                raw = og_image["content"].strip()  # type: ignore[union-attr, index]
                 parsed = urlparse(raw)
                 if parsed.scheme:
                     result["og_image"] = raw
@@ -68,11 +67,7 @@ async def consume_url_created():
         kwargs["sasl_plain_password"] = settings.KAFKA_SASL_PASSWORD
 
     if settings.KAFKA_SSL_CA_PATH:
-        context = ssl.create_default_context(cafile=settings.KAFKA_SSL_CA_PATH)
-        context.check_hostname = False
-        kwargs["ssl_context"] = context
-
-    apply_sni_patch(settings.KAFKA_BOOTSTRAP_SERVERS)
+        kwargs["ssl_context"] = _make_sni_context(settings.KAFKA_BOOTSTRAP_SERVERS, settings.KAFKA_SSL_CA_PATH)
 
     kwargs_without_bootstrap = kwargs.copy()
     kwargs_without_bootstrap.pop('bootstrap_servers', None)
@@ -100,6 +95,8 @@ async def handle_metadata_message(msg, consumer, logger):
             await consumer.commit()
             return
 
+        assert isinstance(short_code, str)
+        assert isinstance(original_url, str)
         logger.info("Extracting metadata for %s (%s)", short_code, original_url)
         meta = await extract_metadata(original_url, logger)
 

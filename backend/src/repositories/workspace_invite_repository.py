@@ -30,12 +30,12 @@ class WorkspaceInviteRepository(BaseRepository[WorkspaceInvite]):
         return await self.update(invite.id, status=InviteStatus.cancelled)
 
     async def expire_stale(self) -> int:
-        from datetime import datetime
+        from datetime import datetime, timezone
         result = await self.db.execute(
             select(WorkspaceInvite).where(
                 and_(
                     WorkspaceInvite.status == InviteStatus.pending,
-                    WorkspaceInvite.expires_at < datetime.utcnow(),
+                    WorkspaceInvite.expires_at < datetime.now(timezone.utc),
                 )
             )
         )

@@ -45,21 +45,21 @@ class TestWorkspaceRoutes:
                                      "email": "invited@example.com",
                                      "role": "editor",
                                  })
-        assert resp.status_code == status.HTTP_200_OK
+        assert resp.status_code == status.HTTP_201_CREATED
         assert resp.json()["email"] == "invited@example.com"
 
-    async def test_list_members(self, client, auth_headers, test_workspace):
+    async def test_list_members(self, client, auth_headers, test_workspace, test_member):
         resp = await client.get(f"/api/v1/workspaces/{test_workspace.id}/members", headers=auth_headers)
         assert resp.status_code == status.HTTP_200_OK
         data = resp.json()
         assert len(data) >= 1
 
-    async def test_create_workspace_no_auth(self, client):
-        resp = await client.post("/api/v1/workspaces", json={"name": "Unauth Workspace"})
-        assert resp.status_code == status.HTTP_403_FORBIDDEN
+    async def test_create_workspace_no_auth(self, unauth_client):
+        resp = await unauth_client.post("/api/v1/workspaces", json={"name": "Unauth Workspace"})
+        assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
-    async def test_update_member_role(self, client, auth_headers, test_workspace, test_user):
-        resp = await client.put(f"/api/v1/workspaces/{test_workspace.id}/members/{test_user.id}/role",
+    async def test_update_member_role(self, client, auth_headers, test_workspace, test_member):
+        resp = await client.put(f"/api/v1/workspaces/{test_workspace.id}/members/{test_member.id}/role",
                                 headers=auth_headers, json={"role": "viewer"})
         assert resp.status_code == status.HTTP_200_OK
         assert resp.json()["role"] == "viewer"

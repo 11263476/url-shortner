@@ -2,66 +2,46 @@ version: "3.9"
 
 services:
   postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: linkforge_user
-      POSTGRES_PASSWORD: linkforge_password
-      POSTGRES_DB: linkforge_db
+    image: postgres:16
+    restart: unless-stopped
     ports:
       - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-
-  mongodb:
-    image: mongo:7
     environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: adminpassword
-      MONGO_INITDB_DATABASE: linkforge_analytics
-    ports:
-      - "27017:27017"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: url_shortener
     volumes:
-      - mongodata:/data/db
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.6
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-
-  kafka:
-    image: confluentinc/cp-kafka:7.6
-    depends_on:
-      - zookeeper
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
     ports:
-      - "29092:29092"
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:29092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-
-  prometheus:
-    image: prom/prometheus:latest
-    ports:
-      - "9090:9090"
+      - "27017:27017"
     volumes:
-      - ./docker/prometheus-config.yml:/etc/prometheus/prometheus.yml
-
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3001:3000"
-    depends_on:
-      - prometheus
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      - mongo_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
-  pgdata:
-  mongodata:
+  postgres_data:
+  mongo_data:

@@ -18,7 +18,7 @@ class GeoService:
             cached = await redis_client.get(cache_key)
             if cached:
                 import json
-                return json.loads(cached)
+                return json.loads(cached)  # type: ignore[no-any-return]
 
         try:
             params = urlencode({"fields": "country,city,query"})

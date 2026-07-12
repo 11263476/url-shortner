@@ -49,6 +49,6 @@ class TestApiKeyRoutes:
         assert "remaining_quota" in data
         assert "daily_limit" in data
 
-    async def test_create_api_key_no_auth(self, client):
-        resp = await client.post("/api/v1/api-keys", json={"name": "Unauth Key"})
-        assert resp.status_code == status.HTTP_403_FORBIDDEN
+    async def test_create_api_key_no_auth(self, unauth_client):
+        resp = await unauth_client.post("/api/v1/api-keys", json={"name": "Unauth Key"})
+        assert resp.status_code == status.HTTP_401_UNAUTHORIZED

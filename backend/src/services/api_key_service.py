@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.core.api_key_auth import APIKeyQuotaManager
 from src.core.security import hash_password
@@ -58,9 +58,11 @@ class APIKeyService:
         if not key or key.user_id != user_id:
             raise NotFoundError("API key not found.")
         user = await self.user_repo.get(user_id)
+        if not user:
+            raise NotFoundError("User not found.")
         daily_limit = APIKeyQuotaManager.get_quota_for_user(user.plan)
         remaining = await APIKeyQuotaManager.get_remaining_quota(key.id, user.plan)
-        tomorrow = (datetime.utcnow() + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         return {
             "api_key_id": key.id,
             "remaining_quota": remaining,

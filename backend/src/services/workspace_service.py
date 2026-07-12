@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.errors import (
     AlreadyMember,
@@ -85,7 +85,7 @@ class WorkspaceService:
             if await self.member_repo.is_member(workspace_id, user.id):
                 raise AlreadyMember()
         token = secrets.token_urlsafe(32)
-        expires_at = datetime.utcnow() + timedelta(days=7)
+        expires_at = datetime.now(timezone.utc) + timedelta(days=7)
         invite = await self.invite_repo.create(
             workspace_id=workspace_id, email=email, invited_by=invited_by,
             token=token, role=role, expires_at=expires_at,
@@ -110,7 +110,7 @@ class WorkspaceService:
             raise InviteNotFound()
         if invite.status != InviteStatus.pending:
             raise BadRequestError("Invite is no longer valid.")
-        if invite.expires_at < datetime.utcnow():
+        if invite.expires_at < datetime.now(timezone.utc):
             await self.invite_repo.update(invite.id, status="expired")
             raise InviteExpired()
         user = await self.user_repo.get(user_id)

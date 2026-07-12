@@ -40,4 +40,4 @@ class WebhookResponse(BaseModel):
     def split_events(cls, v: Any) -> List[str]:
         if isinstance(v, str):
             return [e.strip() for e in v.split(",") if e.strip()]
-        return v
+        return v  # type: ignore[no-any-return]

@@ -74,7 +74,7 @@ class TestAdminRoutes:
         resp = await client.delete("/api/v1/admin/users/999999")
         assert resp.status_code == status.HTTP_404_NOT_FOUND
 
-    async def test_list_workspaces(self, client, db, test_user):
+    async def test_list_workspaces(self, client, db, test_user, test_workspace):
         await self._make_superadmin(db, test_user)
         resp = await client.get("/api/v1/admin/workspaces")
         assert resp.status_code == status.HTTP_200_OK
@@ -99,7 +99,7 @@ class TestAdminRoutes:
         resp = await client.get("/api/v1/admin/urls")
         assert resp.status_code == status.HTTP_403_FORBIDDEN
 
-    async def test_platform_stats(self, client, db, test_user):
+    async def test_platform_stats(self, client, db, test_user, test_workspace, test_url):
         await self._make_superadmin(db, test_user)
         resp = await client.get("/api/v1/admin/stats")
         assert resp.status_code == status.HTTP_200_OK

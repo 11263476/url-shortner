@@ -62,7 +62,8 @@ class BulkService:
             reader = csv.DictReader(io.StringIO(contents.decode("utf-8")))
         except Exception:
             raise BadRequestError("Invalid CSV file.")
-        created, errors = [], []
+        created: list[str] = []
+        errors: list[dict[str, object]] = []
         for i, row in enumerate(reader, start=2):
             await self._process_row(row, i, workspace_id, user_id, errors, created)
         await self.db.commit()
@@ -83,6 +84,7 @@ class BulkService:
         if not short_code:
             result = await self.db.execute(text("SELECT nextval('url_short_code_seq')"))
             seq_value = result.scalar()
+            assert seq_value is not None
             short_code = hashid_encode(seq_value, settings.SECRET_KEY)
 
         try:
@@ -143,7 +145,7 @@ class BulkService:
         rows = await self.url_repo.get_short_codes_by_ids(url_ids, workspace_id)
         await self.url_repo.bulk_update(url_ids, workspace_id, status=URLStatus.disabled)
         for row in rows:
-            await delete_url_cache(row.short_code)
+            await delete_url_cache(row[1])
         return len(rows)
 
     async def reactivate(self, workspace_id: int, user_id: int, url_ids: list[int]):
@@ -162,13 +164,13 @@ class BulkService:
         rows = await self.url_repo.get_short_codes_by_ids(url_ids, workspace_id)
         await self.url_repo.bulk_update(url_ids, workspace_id, status=URLStatus.deleted)
         for row in rows:
-            await delete_url_cache(row.short_code)
+            await delete_url_cache(row[1])
         return len(rows)
 
     async def export(self, workspace_id: int, user_id: int, fmt: str):
         await self._verify_workspace(workspace_id, user_id)
         result = await self.url_repo.get_workspace_urls(workspace_id)
-        urls = result["items"]
+        urls: list[URL] = result["items"]  # type: ignore[assignment]
         data = [
             {
                 "id": u.id, "short_code": u.short_code, "original_url": u.original_url,
@@ -191,7 +193,7 @@ class BulkService:
     async def generate_qr_zip(self, workspace_id: int, user_id: int, url_ids: list[int] | None):
         await self._verify_workspace(workspace_id, user_id)
         result = await self.url_repo.get_workspace_urls(workspace_id)
-        urls = result["items"]
+        urls: list[URL] = result["items"]  # type: ignore[assignment]
         if url_ids:
             urls = [u for u in urls if u.id in url_ids]
         if not urls:
@@ -205,7 +207,7 @@ class BulkService:
                 qr.make(fit=True)
                 img = qr.make_image(fill_color="black", back_color="white")
                 buf = io.BytesIO()
-                img.save(buf, format="PNG")
+                img.save(buf, format="PNG")  # type: ignore[call-arg]
                 buf.seek(0)
                 zf.writestr(f"{u.short_code}.png", buf.read())
         zip_buffer.seek(0)

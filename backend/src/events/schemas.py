@@ -7,6 +7,9 @@ import fastavro
 import httpx
 
 from src.core.config import settings
+from src.log_utils import get_logger
+
+logger = get_logger(__name__)
 
 SCHEMA_DIR = Path(__file__).resolve().parents[2] / "schemas" / "avro"
 
@@ -23,29 +26,25 @@ def _load_schema(topic: str) -> dict:
     return _schemas[topic]
 
 
-def serialize(topic: str, value: dict) -> bytes:
+def serialize(topic: str, value: dict[str, object]) -> bytes:
     schema = _load_schema(topic)
     buf = io.BytesIO()
     fastavro.schemaless_writer(buf, schema, value)
     return buf.getvalue()
 
 
-def deserialize(topic: str, data: bytes) -> dict:
+def deserialize(topic: str, data: bytes) -> dict[str, object]:
     schema = _load_schema(topic)
     buf = io.BytesIO(data)
     try:
-        return fastavro.schemaless_reader(buf, schema)
+        return fastavro.schemaless_reader(buf, schema)  # type: ignore[return-value]
     except Exception:
-        # Schema may have evolved (new fields with defaults).
-        # Try reading with a schema that drops fields that have defaults
-        # (old messages written before the schema was extended).
         old_schema = _evolve_schema(schema)
         buf.seek(0)
-        return fastavro.schemaless_reader(buf, old_schema)
+        return fastavro.schemaless_reader(buf, old_schema)  # type: ignore[return-value]
 
 
 def _evolve_schema(schema: dict) -> dict:
-    """Return a version of the schema with only required fields (no defaults)."""
     fields = []
     for f in schema["fields"]:
         if "default" not in f:
@@ -72,11 +71,11 @@ async def register_schemas():
                     timeout=10,
                 )
                 if resp.is_success:
-                    print(f"[OK] Registered schema for {topic}")
+                    logger.info("Registered schema for %s", topic)
                 else:
-                    print(f"[WARN] Schema registration for {topic}: {resp.status_code} {resp.text}")
+                    logger.warning("Schema registration for %s: %s %s", topic, resp.status_code, resp.text)
         except Exception as e:
-            print(f"[WARN] Could not reach schema registry at {url}: {e}")
+            logger.warning("Could not reach schema registry at %s: %s", url, e)
 
 
 def get_schema(topic: str) -> dict:

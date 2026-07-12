@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pydantic import computed_field
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,20 +8,29 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "LinkForge URL Shortener"
 
     # --- PostgreSQL (Neon / Supabase / local Docker) ---
-    DATABASE_URL: Optional[str] = None   # Full URL takes priority if set
+    DATABASE_URL: Optional[str] = None
     POSTGRES_USER: str = "linkforge_user"
     POSTGRES_PASSWORD: str = "linkforge_password"
     POSTGRES_DB: str = "linkforge_db"
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
 
-    @computed_field
-    @property
-    def ASYNC_DATABASE_URI(self) -> str:
-        if self.DATABASE_URL:
-            base = self.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
-            # asyncpg does not support sslmode= or channel_binding= query params
-            # Convert sslmode=require to asyncpg-native ?ssl=require form
+    ASYNC_DATABASE_URI: str = ""
+
+    @field_validator("ASYNC_DATABASE_URI", mode="before")
+    @classmethod
+    def build_async_uri(cls, v, info):
+        if v:
+            return v
+        base_url = info.data.get("DATABASE_URL")
+        user = info.data.get("POSTGRES_USER", "linkforge_user")
+        password = info.data.get("POSTGRES_PASSWORD", "linkforge_password")
+        host = info.data.get("POSTGRES_HOST", "localhost")
+        port = info.data.get("POSTGRES_PORT", 5432)
+        db = info.data.get("POSTGRES_DB", "linkforge_db")
+
+        if base_url:
+            base = base_url.replace("postgresql://", "postgresql+asyncpg://")
             q = ""
             if "?" in base:
                 base, q = base.split("?", 1)
@@ -32,10 +41,7 @@ class Settings(BaseSettings):
                     other_params.append("ssl=require")
                 q = ("?" + "&".join(other_params)) if other_params else ""
             return f"{base}{q}"
-        return (
-            f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
-            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-        )
+        return f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{db}"
 
     # --- MongoDB (Atlas / Aiven) ---
     MONGODB_URI: str = "mongodb://admin:adminpassword@localhost:27017"
@@ -58,20 +64,26 @@ class Settings(BaseSettings):
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:29092"
     KAFKA_SASL_USERNAME: Optional[str] = None
     KAFKA_SASL_PASSWORD: Optional[str] = None
-    # Path to the Aiven CA certificate (download from Aiven dashboard)
     KAFKA_SSL_CA_PATH: Optional[str] = None
     SCHEMA_REGISTRY_URL: Optional[str] = None
 
-    @computed_field
-    @property
-    def KAFKA_SECURITY_PROTOCOL(self) -> str:
-        """Returns SASL_SSL when Aiven credentials are set, PLAINTEXT for local Docker."""
-        return "SASL_SSL" if self.KAFKA_SASL_USERNAME else "PLAINTEXT"
+    KAFKA_SECURITY_PROTOCOL: str = "PLAINTEXT"
 
-    @computed_field
-    @property
-    def KAFKA_SASL_MECHANISM(self) -> str:
-        return "PLAIN" if self.KAFKA_SASL_USERNAME else "GSSAPI"
+    @field_validator("KAFKA_SECURITY_PROTOCOL", mode="before")
+    @classmethod
+    def build_security_protocol(cls, v, info):
+        if v and v != "PLAINTEXT":
+            return v
+        return "SASL_SSL" if info.data.get("KAFKA_SASL_USERNAME") else "PLAINTEXT"
+
+    KAFKA_SASL_MECHANISM: str = "GSSAPI"
+
+    @field_validator("KAFKA_SASL_MECHANISM", mode="before")
+    @classmethod
+    def build_sasl_mechanism(cls, v, info):
+        if v and v != "GSSAPI":
+            return v
+        return "PLAIN" if info.data.get("KAFKA_SASL_USERNAME") else "GSSAPI"
 
     # --- SMTP (Email) ---
     SMTP_HOST: str = ""
@@ -120,5 +132,6 @@ class Settings(BaseSettings):
         case_sensitive=True,
         extra="ignore",
     )
+
 
 settings = Settings()

@@ -27,9 +27,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from src.core.config import settings
-from src.core.database import engine
+from src.core.database import check_db_health, engine, init_db
 from src.core.mongodb import init_mongodb
-from src.core.redis import init_redis
+from src.core.redis import init_redis, redis_client
 from src.core.tracing import init_metrics, init_tracing, instrument_fastapi, instrument_sqlalchemy
 from src.errors.base import AppError
 from src.events.kafka import close_kafka, init_kafka
@@ -99,8 +99,24 @@ def create_app(lifespan_override=None):
             content={"detail": exc.detail, "error_code": exc.error_code},
         )
 
-    # Include routers
+    # Health check – must be registered before the catch-all /{short_code}
+    @app.get("/health")
+    async def health():
+        db_ok = await check_db_health()
+        try:
+            await redis_client.ping()
+            redis_ok = True
+        except Exception:
+            redis_ok = False
+        status = 503 if not db_ok or not redis_ok else 200
+        return JSONResponse(
+            status_code=status,
+            content={"status": "unhealthy" if status == 503 else "healthy", "database": db_ok, "redis": redis_ok},
+        )
+
+    # Include routers (bulk must be before urls to avoid /urls/{id}/qr catching /urls/bulk/qr)
     app.include_router(auth.router, prefix="/api/v1")
+    app.include_router(bulk.router, prefix="/api/v1")
     app.include_router(urls.router, prefix="/api/v1")
     app.include_router(profile.router, prefix="/api/v1")
     app.include_router(workspaces.router, prefix="/api/v1")
@@ -112,7 +128,6 @@ def create_app(lifespan_override=None):
     app.include_router(api_keys.router, prefix="/api/v1")
     app.include_router(audit_logs.router, prefix="/api/v1")
     app.include_router(billing.router, prefix="/api/v1")
-    app.include_router(bulk.router, prefix="/api/v1")
     app.include_router(webhook_receiver.router, prefix="/api/v1")
     app.include_router(webhooks.router, prefix="/api/v1")
     app.include_router(redirect.router, tags=["redirect"])
@@ -137,26 +152,32 @@ async def lifespan(app: FastAPI):
         init_tracing()
         init_metrics()
     except Exception as e:
-        print(f"[WARNING] Tracing/metrics init failed: {e}")
+        logger.warning("Tracing/metrics init failed: %s", e)
 
     # Initialize databases
     try:
-        await init_redis()
-        print("[OK] Redis (Upstash) connected successfully.")
+        await init_db()
+        logger.info("Database connection verified.")
     except Exception as e:
-        print(f"[WARNING] Redis connection failed: {e}")
+        logger.warning("Database connection failed: %s", e)
+
+    try:
+        await init_redis()
+        logger.info("Redis (Upstash) connected successfully.")
+    except Exception as e:
+        logger.warning("Redis connection failed: %s", e)
 
     try:
         await init_mongodb()
-        print("[OK] MongoDB (Atlas) connected successfully.")
+        logger.info("MongoDB (Atlas) connected successfully.")
     except Exception as e:
-        print(f"[WARNING] MongoDB connection failed: {e}")
+        logger.warning("MongoDB connection failed: %s", e)
 
     try:
         await init_kafka()
-        print("[OK] Kafka connected successfully.")
+        logger.info("Kafka connected successfully.")
     except Exception as e:
-        print(f"[WARNING] Kafka connection failed (consumers will retry): {e}")
+        logger.warning("Kafka connection failed (consumers will retry): %s", e)
 
     # Start background workers (skip if running them separately)
     if not os.environ.get("STANDALONE_WORKERS"):
@@ -179,7 +200,7 @@ async def lifespan(app: FastAPI):
             task.cancel()
         await asyncio.gather(*[task if task.done() else asyncio.wait_for(task, timeout=5) for task in tasks], return_exceptions=True)
     else:
-        print("[INFO] Workers NOT started in backend (running separately)")
+        logger.info("Workers NOT started in backend (running separately)")
         yield
 
     await close_kafka()

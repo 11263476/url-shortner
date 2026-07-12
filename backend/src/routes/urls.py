@@ -68,7 +68,7 @@ async def get_qr_code(id: int, current_user: User = Depends(get_current_user), s
         qr.add_data(f"{settings.BACKEND_URL or 'http://127.0.0.1:8000'}/{url_obj.short_code}")
         qr.make(fit=True)
         buf = _io.BytesIO()
-        qr.make_image(fill_color="black", back_color="white").save(buf, format="PNG")
+        qr.make_image(fill_color="black", back_color="white").save(buf, format="PNG")  # type: ignore[call-arg]
         b64 = base64.b64encode(buf.getvalue()).decode()
         await svc.update_qr(id, b64, current_user.id)
         url_obj.qr_code = b64
