@@ -1,10 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import { render, screen } from "@/test/test-utils"
-import { server } from "@/test/mocks/server"
-import { http, HttpResponse } from "msw"
 import URLDetailPage from "@/app/(authenticated)/urls/[id]/page"
-
-const API = process.env.NEXT_PUBLIC_API_URL || "/api/v1"
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "1" }),
