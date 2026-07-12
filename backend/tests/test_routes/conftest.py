@@ -17,6 +17,21 @@ from src.models.workspace_member import MemberRole, WorkspaceMember
 
 pytestmark = pytest.mark.integration
 
+
+@pytest_asyncio.fixture(autouse=True)
+async def mock_redis():
+    redis_mock = AsyncMock()
+    redis_mock.get.return_value = None
+    redis_mock.setex.return_value = True
+    redis_mock.delete.return_value = True
+    redis_mock.incr.return_value = 1
+    redis_mock.expire.return_value = True
+    redis_mock.eval.return_value = 1
+    with (patch("src.core.deps.redis_client", redis_mock),
+          patch("src.core.api_key_auth.redis_client", redis_mock),
+          patch("src.services.auth_service.redis_client", redis_mock)):
+        yield
+
 _test_engine = None
 
 
