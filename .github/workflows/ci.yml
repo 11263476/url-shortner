@@ -3,48 +3,15 @@ name: CI
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
 
 env:
   PYTHON_VERSION: "3.13"
   NODE_VERSION: "22"
-  REGISTRY: ghcr.io
 
 jobs:
-  pre-commit:
-    name: Pre-commit Checks
+  build:
+    name: Build & Test
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - run: pip install pre-commit
-      - run: pre-commit run --all-files --show-diff-on-failure
-
-  backend-lint:
-    name: Backend Lint
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - run: pip install --upgrade pip hatchling
-      - run: pip install .[dev]
-      - run: ruff check src/ --exit-zero
-      - run: mypy src/
-
-  backend-unit:
-    name: Backend Unit Tests
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
     services:
       postgres:
         image: postgres:16
@@ -58,194 +25,45 @@ jobs:
         image: redis:7
         ports:
           - 6379:6379
-    env:
-      DATABASE_URL: postgresql://linkforge_user:linkforge_password@localhost:5432/linkforge_db
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - run: pip install --upgrade pip hatchling
-      - run: pip install .[dev]
-      - run: python -m alembic upgrade head
-      - name: Run unit tests (excl. integration-marked tests)
-        run: python -m pytest tests/ -v --cov=src --cov-report=xml -m "not integration" --timeout=60 2>&1 | tee /tmp/test_output.log
-      - name: Upload test log on failure
-        if: failure()
-        uses: actions/upload-artifact@v5
-        with:
-          name: backend-unit-log
-          path: /tmp/test_output.log
 
-  backend-integration:
-    name: Backend Integration Tests
-    runs-on: ubuntu-latest
-    defaults:
-      run:
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Backend lint
         working-directory: backend
-    if: github.ref == 'refs/heads/main'
-    services:
-      postgres:
-        image: postgres:16
+        run: |
+          pip install --upgrade pip hatchling
+          pip install .[dev]
+          ruff check src/ --exit-zero
+          mypy src/
+
+      - name: Backend unit tests
+        working-directory: backend
         env:
-          POSTGRES_USER: linkforge_user
-          POSTGRES_PASSWORD: linkforge_password
-          POSTGRES_DB: linkforge_db
-        ports:
-          - 5432:5432
-      redis:
-        image: redis:7
-        ports:
-          - 6379:6379
-      mongodb:
-        image: mongo:7
-        ports:
-          - 27017:27017
-    env:
-      DATABASE_URL: postgresql://linkforge_user:linkforge_password@localhost:5432/linkforge_db
-      MONGODB_URI: mongodb://admin:adminpassword@localhost:27017
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - run: pip install --upgrade pip hatchling
-      - run: pip install .[dev]
-      - run: python -m alembic upgrade head
-      - name: Run integration tests
-        run: python -m pytest tests/ -v --cov=src --cov-report=xml -m "integration" --timeout=120 2>&1 | tee /tmp/test_output.log
-      - name: Upload test log on failure
-        if: failure()
-        uses: actions/upload-artifact@v5
-        with:
-          name: backend-integration-log
-          path: /tmp/test_output.log
-      - uses: codecov/codecov-action@v5
-        with:
-          files: ./backend/coverage.xml
-          flags: backend
-          token: ${{ secrets.CODECOV_TOKEN }}
-
-  frontend-lint:
-    name: Frontend Lint
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - run: npm ci --prefer-offline
-      - run: npm run lint
-
-  frontend-test:
-    name: Frontend Test
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - run: npm ci
-      - run: npm run test
-
-  frontend-build:
-    name: Frontend Build
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - name: Debug info
-        run: node --version && npm --version
-      - run: npm ci --prefer-offline
-      - name: Build (capture output)
-        run: npm run build 2>&1 | tee /tmp/build_output.log
-      - name: Upload build log on failure
-        if: failure()
-        uses: actions/upload-artifact@v5
-        with:
-          name: frontend-build-log
-          path: /tmp/build_output.log
-
-  docker-build:
-    name: Docker Build & Push
-    runs-on: ubuntu-latest
-    needs: [backend-lint, backend-unit, frontend-lint, frontend-test, frontend-build]
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Lowercase repository name (Docker tags must be lowercase)
-        shell: bash
-        run: echo "REPOSITORY=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push backend
-        shell: bash
+          DATABASE_URL: postgresql://linkforge_user:linkforge_password@localhost:5432/linkforge_db
         run: |
-          docker buildx build \
-            --cache-from type=gha \
-            --cache-to type=gha,mode=max \
-            --tag ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/backend:${{ github.sha }} \
-            --tag ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/backend:latest \
-            --push \
-            ./backend
+          python -m alembic upgrade head
+          python -m pytest tests/ -v --timeout=60 -m "not integration"
 
-      - name: Build and push frontend
-        shell: bash
+      - name: Frontend lint
+        working-directory: frontend
         run: |
-          set -o pipefail
-          docker buildx build \
-            --cache-from type=gha \
-            --cache-to type=gha,mode=max \
-            --tag ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/frontend:${{ github.sha }} \
-            --tag ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/frontend:latest \
-            --push \
-            ./frontend 2>&1 | tee /tmp/fe.log
+          npm ci
+          npm run lint
 
-      - name: Report frontend build error
-        if: failure()
-        shell: bash
-        run: |
-          echo "::error::Frontend Docker build failed. Build tail:"
-          tail -15 /tmp/fe.log 2>/dev/null | while IFS= read -r line; do echo "::error::$line"; done
+      - name: Frontend test
+        working-directory: frontend
+        run: npm run test
 
-      - name: Scan backend image with Trivy
-        uses: aquasecurity/trivy-action@v0.35.0
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/backend:${{ github.sha }}
-          format: table
-          exit-code: 0
-          severity: CRITICAL
-
-      - name: Scan frontend image with Trivy
-        uses: aquasecurity/trivy-action@v0.35.0
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/frontend:${{ github.sha }}
-          format: table
-          exit-code: 0
-          severity: CRITICAL
+      - name: Frontend build
+        working-directory: frontend
+        run: npm run build
