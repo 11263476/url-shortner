@@ -209,18 +209,18 @@ function WorkspacesPageInner() {
         ) : (
           workspaces.map((ws) => (
             <Card key={ws.id}>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div className="flex items-center gap-2">
+              <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
                   {renaming === ws.id ? (
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2 w-full">
                       <Input value={renameValue} onValueChange={(v) => setRenameValue(v)}
-                        className="h-8 w-48" autoFocus onKeyDown={(e) => e.key === "Enter" && handleRename(ws.id)} />
+                        className="h-8 w-full sm:w-48" autoFocus onKeyDown={(e) => e.key === "Enter" && handleRename(ws.id)} />
                       <Button size="sm" onClick={() => handleRename(ws.id)}>Save</Button>
                       <Button size="sm" variant="outline" onClick={() => setRenaming(null)}>Cancel</Button>
                     </div>
                   ) : (
                     <>
-                      <CardTitle>{ws.name}</CardTitle>
+                      <CardTitle className="break-all">{ws.name}</CardTitle>
                       {isOwner(ws.id) && (
                         <Button variant="ghost" size="xs" onClick={() => { setRenaming(ws.id); setRenameValue(ws.name) }}>
                           <Pencil className="size-3.5" />
@@ -230,7 +230,7 @@ function WorkspacesPageInner() {
                   )}
                   <p className="text-xs text-muted-foreground">Owner ID: {ws.owner_id}</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {isOwner(ws.id) && (
                     <>
                       <Button variant="outline" size="sm"
