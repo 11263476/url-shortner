@@ -45,7 +45,7 @@ export default function WebhookReceiverPage() {
     refetchInterval: 5000,
   })
 
-  const receiverUrl = wsId ? `http://localhost:3000/api/v1/webhook-receiver` : ""
+  const receiverUrl = wsId ? `${window.location.origin}/api/v1/webhook-receiver` : ""
 
   async function copyUrl() {
     await navigator.clipboard.writeText(receiverUrl)
