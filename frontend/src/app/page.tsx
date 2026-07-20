@@ -295,7 +295,7 @@ export default function Home() {
                   href="/register"
                   className={`mt-8 flex h-11 w-full items-center justify-center rounded-lg text-sm font-medium transition-colors ${plan.popular ? "bg-blue-600 text-white hover:bg-blue-700" : "border border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700"}`}
                 >
-                  {plan.name === "Free" ? "Get Started" : "Upgrade"}
+                  Get Started
                 </Link>
               </motion.div>
             ))}

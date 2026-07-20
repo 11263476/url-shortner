@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,14 +8,7 @@ import { Select } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { StatsCardSkeleton, TableSkeleton } from "@/components/ui/skeleton"
 import { useDashboard } from "@/hooks/useDashboard"
-import { BarChart3, ExternalLink, Plus, Link2, Activity, Crown, AlertTriangle, TrendingUp, MousePointerClick } from "lucide-react"
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
-
-const chartData = [
-  { name: "Mon", clicks: 240 }, { name: "Tue", clicks: 320 }, { name: "Wed", clicks: 280 },
-  { name: "Thu", clicks: 450 }, { name: "Fri", clicks: 380 }, { name: "Sat", clicks: 200 },
-  { name: "Sun", clicks: 290 },
-]
+import { BarChart3, ExternalLink, Plus, Link2, Activity, Crown, AlertTriangle, MousePointerClick } from "lucide-react"
 
 export default function DashboardPage() {
   useEffect(() => { document.title = "Dashboard - LinkForge" }, [])
@@ -87,25 +80,23 @@ export default function DashboardPage() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="size-4 text-blue-400" />
-              Weekly Clicks
+              <BarChart3 className="size-4 text-blue-400" />
+              Click Activity
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="name" stroke="rgba(255,255,255,0.3)" tick={{ fontSize: 12 }} />
-                  <YAxis stroke="rgba(255,255,255,0.3)" tick={{ fontSize: 12 }} />
-                  <Tooltip
-                    contentStyle={{ background: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", color: "#fff" }}
-                    labelStyle={{ color: "#a1a1aa" }}
-                  />
-                  <Line type="monotone" dataKey="clicks" stroke="#3b82f6" strokeWidth={2} dot={{ fill: "#3b82f6", r: 4 }} activeDot={{ r: 6 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+            {totalUrlsCount === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <BarChart3 className="mb-3 size-10 text-zinc-600" />
+                <p className="text-sm text-muted-foreground">No click data yet</p>
+                <p className="mt-1 text-xs text-zinc-600">Create a URL and start tracking clicks.</p>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <p className="text-4xl font-bold gradient-text">{totalUrlsCount}</p>
+                <p className="mt-1 text-sm text-muted-foreground">URLs created</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -125,11 +116,6 @@ export default function DashboardPage() {
             <Link href="/urls">
               <Button variant="outline" className="w-full justify-start gap-2">
                 <Link2 className="size-4" /> View All URLs
-              </Button>
-            </Link>
-            <Link href="/analytics">
-              <Button variant="outline" className="w-full justify-start gap-2">
-                <BarChart3 className="size-4" /> View Analytics
               </Button>
             </Link>
             <Link href="/workspaces">
