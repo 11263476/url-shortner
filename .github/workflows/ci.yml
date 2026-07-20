@@ -9,9 +9,28 @@ env:
   NODE_VERSION: "22"
 
 jobs:
-  build:
-    name: Build & Test
+  backend-lint:
+    name: Backend Lint
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install --upgrade pip hatchling
+      - run: pip install .[dev]
+      - run: ruff check src/ --exit-zero
+      - run: mypy src/
+
+  backend-test:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     services:
       postgres:
         image: postgres:16
@@ -25,45 +44,56 @@ jobs:
         image: redis:7
         ports:
           - 6379:6379
+    env:
+      DATABASE_URL: postgresql://linkforge_user:linkforge_password@localhost:5432/linkforge_db
     steps:
       - uses: actions/checkout@v5
-
-      - name: Setup Python
-        uses: actions/setup-python@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install --upgrade pip hatchling
+      - run: pip install .[dev]
+      - run: python -m alembic upgrade head
+      - run: python -m pytest tests/ -v --timeout=60 -m "not integration"
 
-      - name: Setup Node
-        uses: actions/setup-node@v5
+  frontend-lint:
+    name: Frontend Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
+      - run: npm ci
+      - run: npm run lint
 
-      - name: Backend lint
-        working-directory: backend
-        run: |
-          pip install --upgrade pip hatchling
-          pip install .[dev]
-          ruff check src/ --exit-zero
-          mypy src/
-
-      - name: Backend unit tests
-        working-directory: backend
-        env:
-          DATABASE_URL: postgresql://linkforge_user:linkforge_password@localhost:5432/linkforge_db
-        run: |
-          python -m alembic upgrade head
-          python -m pytest tests/ -v --timeout=60 -m "not integration"
-
-      - name: Frontend lint
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
         working-directory: frontend
-        run: |
-          npm ci
-          npm run lint
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm ci
+      - run: npm run test
 
-      - name: Frontend test
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
         working-directory: frontend
-        run: npm run test
-
-      - name: Frontend build
-        working-directory: frontend
-        run: npm run build
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm ci
+      - run: npm run build
