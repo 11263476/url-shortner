@@ -120,11 +120,11 @@ def instrument_redis(client):
 
 
 def get_tracer(name: str) -> trace.Tracer:
-    return trace.get_tracer(name, version="1.0.0")
+    return trace.get_tracer(name)
 
 
 def get_meter(name: str) -> metrics.Meter:
-    return metrics.get_meter(name, version="1.0.0")
+    return metrics.get_meter(name)
 
 
 def generate_correlation_id() -> str:

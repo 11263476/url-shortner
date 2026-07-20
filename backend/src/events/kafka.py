@@ -1,5 +1,5 @@
 import asyncio
-from typing import Optional
+from typing import Any, Optional
 
 from aiokafka import AIOKafkaProducer
 
@@ -17,14 +17,14 @@ _RETRY_DELAYS = [1, 2, 4, 8, 16]  # exponential backoff seconds
 
 async def init_kafka():
     global producer
-    kwargs = {
+    kwargs: dict[str, Any] = {
         "bootstrap_servers": settings.KAFKA_BOOTSTRAP_SERVERS,
         "security_protocol": settings.KAFKA_SECURITY_PROTOCOL,
     }
     if settings.KAFKA_SASL_USERNAME:
         kwargs["sasl_mechanism"] = settings.KAFKA_SASL_MECHANISM
         kwargs["sasl_plain_username"] = settings.KAFKA_SASL_USERNAME
-        kwargs["sasl_plain_password"] = settings.KAFKA_SASL_PASSWORD  # type: ignore[assignment]
+        kwargs["sasl_plain_password"] = settings.KAFKA_SASL_PASSWORD
     if settings.KAFKA_SSL_CA_PATH:
         kwargs["ssl_context"] = _make_sni_context(
             settings.KAFKA_BOOTSTRAP_SERVERS, settings.KAFKA_SSL_CA_PATH,
@@ -70,7 +70,7 @@ async def publish_event(topic: str, value: dict, key: Optional[str] = None):
 
 async def _send_and_stop(topic: str, value: bytes, key: Optional[bytes] = None):
     """Create a temporary producer, send one message, and stop."""
-    kwargs = {
+    kwargs: dict[str, Any] = {
         "bootstrap_servers": settings.KAFKA_BOOTSTRAP_SERVERS,
         "security_protocol": settings.KAFKA_SECURITY_PROTOCOL,
     }

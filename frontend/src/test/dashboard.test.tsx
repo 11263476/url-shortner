@@ -2,10 +2,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen } from "@testing-library/react"
 import DashboardPage from "@/app/(authenticated)/dashboard/page"
 
+const { mockDashboard } = vi.hoisted(() => {
+  const state = { urlList: [] as any[], totalUrlsCount: 0 }
+  return {
+    mockDashboard: state,
+  }
+})
+
 vi.mock("@/hooks/useDashboard", () => ({
   useDashboard: () => ({
-    urlList: [],
-    totalUrlsCount: 0,
+    urlList: mockDashboard.urlList,
+    totalUrlsCount: mockDashboard.totalUrlsCount,
     workspaces: [],
     wsId: null,
     error: null,
@@ -39,11 +46,13 @@ vi.mock("next/navigation", () => ({
 describe("DashboardPage", () => {
   beforeEach(() => {
     document.title = ""
+    mockDashboard.urlList = []
+    mockDashboard.totalUrlsCount = 0
   })
 
-  it("renders dashboard title", () => {
+  it("renders dashboard welcome", () => {
     render(<DashboardPage />)
-    expect(screen.getByText("Dashboard")).toBeDefined()
+    expect(screen.getByText(/Welcome back/i)).toBeDefined()
   })
 
   it("renders stats cards", () => {
@@ -53,6 +62,8 @@ describe("DashboardPage", () => {
   })
 
   it("shows view all link", () => {
+    mockDashboard.urlList = [{ id: 1, short_code: "abc", original_url: "https://example.com", status: "active", is_one_time: false, tags: [] }]
+    mockDashboard.totalUrlsCount = 1
     render(<DashboardPage />)
     expect(screen.getByText("View all")).toBeDefined()
   })

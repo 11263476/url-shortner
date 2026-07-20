@@ -28,7 +28,7 @@ def _make_sni_context(bootstrap_servers: str, cafile: str) -> ssl.SSLContext:
                      suppress_ragged_eofs=True, server_hostname=None, session=None):
         return _orig_wrap_socket(sock, server_side, do_handshake_on_connect,
                                  suppress_ragged_eofs, sni_hostname, session)
-    ctx.wrap_socket = _wrap_socket
+    ctx.wrap_socket = _wrap_socket  # type: ignore[method-assign]
 
     # Patch wrap_bio (used by asyncio on Python 3.13+ / ProactorEventLoop)
     _orig_wrap_bio = ctx.wrap_bio
@@ -36,7 +36,7 @@ def _make_sni_context(bootstrap_servers: str, cafile: str) -> ssl.SSLContext:
                   server_hostname=None, session=None):
         return _orig_wrap_bio(incoming, outgoing, server_side,
                               sni_hostname, session)
-    ctx.wrap_bio = _wrap_bio
+    ctx.wrap_bio = _wrap_bio  # type: ignore[method-assign]
 
     return ctx
 
