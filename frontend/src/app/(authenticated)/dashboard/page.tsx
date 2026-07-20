@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,7 +8,14 @@ import { Select } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { StatsCardSkeleton, TableSkeleton } from "@/components/ui/skeleton"
 import { useDashboard } from "@/hooks/useDashboard"
-import { BarChart3, ExternalLink, Plus, Link2, Activity, Crown, AlertTriangle } from "lucide-react"
+import { BarChart3, ExternalLink, Plus, Link2, Activity, Crown, AlertTriangle, TrendingUp, MousePointerClick } from "lucide-react"
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
+
+const chartData = [
+  { name: "Mon", clicks: 240 }, { name: "Tue", clicks: 320 }, { name: "Wed", clicks: 280 },
+  { name: "Thu", clicks: 450 }, { name: "Fri", clicks: 380 }, { name: "Sat", clicks: 200 },
+  { name: "Sun", clicks: 290 },
+]
 
 export default function DashboardPage() {
   useEffect(() => { document.title = "Dashboard - LinkForge" }, [])
@@ -19,6 +26,12 @@ export default function DashboardPage() {
     setWsId,
   } = useDashboard()
 
+  const stats = [
+    { title: "Total URLs", value: totalUrlsCount, icon: Link2, gradient: "from-blue-500 to-cyan-500" },
+    { title: "Active", value: activeUrls.length, icon: Activity, gradient: "from-green-500 to-emerald-500" },
+    { title: "Plan", value: "free", icon: Crown, gradient: "from-purple-500 to-pink-500" },
+  ]
+
   if (isLoading) {
     return (
       <div className="p-6">
@@ -28,12 +41,6 @@ export default function DashboardPage() {
       </div>
     )
   }
-
-  const stats = [
-    { title: "Total URLs", value: totalUrlsCount, icon: Link2, color: "text-blue-400", bg: "bg-blue-500/10" },
-    { title: "Active", value: activeUrls.length, icon: Activity, color: "text-green-400", bg: "bg-green-500/10" },
-    { title: "Plan", value: "free", icon: Crown, color: "text-purple-400", bg: "bg-purple-500/10" },
-  ]
 
   return (
     <div className="p-6">
@@ -60,19 +67,78 @@ export default function DashboardPage() {
         {stats.map((s) => {
           const Icon = s.icon
           return (
-            <Card key={s.title}>
-              <CardContent className="flex items-center gap-4 pt-6">
-                <div className={`rounded-lg ${s.bg} p-3`}>
-                  <Icon className={`size-6 ${s.color}`} />
+            <Card key={s.title} className="relative overflow-hidden">
+              <div className={`absolute inset-0 bg-gradient-to-br ${s.gradient} opacity-5`} />
+              <CardContent className="relative flex items-center gap-4 pt-6">
+                <div className={`rounded-xl bg-gradient-to-br ${s.gradient} p-3 shadow-lg`}>
+                  <Icon className="size-6 text-white" />
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">{s.title}</p>
-                  <p className="text-2xl font-bold capitalize">{s.value}</p>
+                  <p className="text-2xl font-bold">{s.value}</p>
                 </div>
               </CardContent>
             </Card>
           )
         })}
+      </div>
+
+      <div className="mb-6 grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="size-4 text-blue-400" />
+              Weekly Clicks
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                  <XAxis dataKey="name" stroke="rgba(255,255,255,0.3)" tick={{ fontSize: 12 }} />
+                  <YAxis stroke="rgba(255,255,255,0.3)" tick={{ fontSize: 12 }} />
+                  <Tooltip
+                    contentStyle={{ background: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", color: "#fff" }}
+                    labelStyle={{ color: "#a1a1aa" }}
+                  />
+                  <Line type="monotone" dataKey="clicks" stroke="#3b82f6" strokeWidth={2} dot={{ fill: "#3b82f6", r: 4 }} activeDot={{ r: 6 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MousePointerClick className="size-4 text-purple-400" />
+              Quick Actions
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Link href="/urls/new">
+              <Button className="w-full justify-start gap-2 bg-blue-600 text-white hover:bg-blue-700">
+                <Plus className="size-4" /> Create New URL
+              </Button>
+            </Link>
+            <Link href="/urls">
+              <Button variant="outline" className="w-full justify-start gap-2">
+                <Link2 className="size-4" /> View All URLs
+              </Button>
+            </Link>
+            <Link href="/analytics">
+              <Button variant="outline" className="w-full justify-start gap-2">
+                <BarChart3 className="size-4" /> View Analytics
+              </Button>
+            </Link>
+            <Link href="/workspaces">
+              <Button variant="outline" className="w-full justify-start gap-2">
+                <Activity className="size-4" /> Manage Workspaces
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
       </div>
 
       {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
@@ -97,13 +163,20 @@ export default function DashboardPage() {
         </CardHeader>
         <CardContent>
           {urlList.length === 0 ? (
-            <div className="rounded-xl border-2 border-dashed border-zinc-700 p-12 text-center">
-              <p className="text-muted-foreground">No URLs yet. Create your first one!</p>
+            <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-zinc-700 p-12 text-center">
+              <Link2 className="mb-3 size-10 text-zinc-600" />
+              <p className="text-muted-foreground">No URLs yet</p>
+              <p className="mt-1 text-sm text-zinc-600">Create your first shortened URL to get started.</p>
+              <Link href="/urls/new" className="mt-4">
+                <Button className="bg-blue-600 text-white hover:bg-blue-700">
+                  <Plus className="mr-1 size-4" />Create URL
+                </Button>
+              </Link>
             </div>
           ) : (
             <div className="space-y-2">
               {urlList.slice(0, 5).map((url) => (
-                <div key={url.id} className="flex items-center justify-between rounded-lg border bg-card px-4 py-3">
+                <div key={url.id} className="flex items-center justify-between rounded-lg border bg-card px-4 py-3 transition-colors hover:bg-muted/50">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <a href={`/${url.short_code}`} target="_blank" className="text-sm font-medium text-blue-400 hover:underline">
