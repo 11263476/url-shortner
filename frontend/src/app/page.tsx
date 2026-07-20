@@ -286,7 +286,6 @@ export default function Home() {
               <h4 className="mb-3 text-sm font-semibold text-white">Resources</h4>
               <ul className="space-y-2 text-sm text-zinc-500">
                 <li><a href="https://github.com/BORUTOUZUMAKI07/url-shortner" target="_blank" className="hover:text-white transition-colors">GitHub</a></li>
-                <li><span className="cursor-default">Documentation</span></li>
               </ul>
             </div>
           </div>
