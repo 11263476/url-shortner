@@ -111,7 +111,7 @@ async def deliver_click_webhooks(event_data: dict, logger):
                 async with httpx.AsyncClient() as client:
                     resp = await client.post(
                         wh.url,
-                        json=click_payload,
+                        content=payload_bytes,
                         headers={
                             "Content-Type": "application/json",
                             "X-Webhook-Signature": signature,
