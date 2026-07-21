@@ -161,7 +161,7 @@ export default function URLsPage() {
                         <Badge variant="warning" className="text-xs px-1.5 py-0">One-time</Badge>
                       )}
                     </div>
-                    <p className="mt-0.5 truncate text-xs text-zinc-500">{url.original_url}</p>
+                    <p className="mt-0.5 truncate text-xs text-zinc-400">{url.original_url}</p>
                     {url.tags && url.tags.length > 0 && (
                       <div className="mt-1.5 flex flex-wrap gap-1">
                         {url.tags.map((t) => (
@@ -173,16 +173,16 @@ export default function URLsPage() {
                     )}
                   </div>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => favoriteSet.has(url.id) ? removeFavorite.mutate(url.id) : addFavorite.mutate(url.id)} className={`rounded-md p-1.5 transition-colors ${favoriteSet.has(url.id) ? "text-red-400 hover:bg-red-500/10" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}>
+                    <button onClick={() => favoriteSet.has(url.id) ? removeFavorite.mutate(url.id) : addFavorite.mutate(url.id)} className={`rounded-md p-1.5 transition-colors ${favoriteSet.has(url.id) ? "text-red-400 hover:bg-red-500/10" : "text-zinc-400 hover:text-red-400 hover:bg-red-500/10"}`}>
                       <Heart className={`size-3.5 ${favoriteSet.has(url.id) ? "fill-current" : ""}`} />
                     </button>
-                    <Link href={`/urls/${url.id}`} className="rounded-md p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors">
+                    <Link href={`/urls/${url.id}`} className="rounded-md p-1.5 text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors">
                       <ExternalLink className="size-3.5" />
                     </Link>
-                    <Link href={`/urls/${url.id}/analytics`} className="rounded-md p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors">
+                    <Link href={`/urls/${url.id}/analytics`} className="rounded-md p-1.5 text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors">
                       <BarChart3 className="size-3.5" />
                     </Link>
-                    <button onClick={() => deleteUrl.mutate(url.id)} className="rounded-md p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                    <button onClick={() => deleteUrl.mutate(url.id)} className="rounded-md p-1.5 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors">
                       <Trash2 className="size-3.5" />
                     </button>
                   </div>

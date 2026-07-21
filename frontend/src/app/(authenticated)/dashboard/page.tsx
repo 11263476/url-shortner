@@ -134,7 +134,7 @@ export default function DashboardPage() {
                           <Badge variant="warning" className="text-xs px-1.5 py-0">One-time</Badge>
                         )}
                       </div>
-                      <p className="mt-0.5 truncate text-xs text-zinc-500">{url.original_url}</p>
+                      <p className="mt-0.5 truncate text-xs text-zinc-400">{url.original_url}</p>
                     </div>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Link href={`/urls/${url.id}/analytics`}>
