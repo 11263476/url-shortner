@@ -6,7 +6,6 @@ import Link from "next/link"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Button } from "@/components/ui/button"
-import { BackgroundBeams } from "@/components/ui/background-beams"
 import { auth, getErrorMessage } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
 import { setTokenCookie, setRefreshTokenCookie } from "@/lib/token-cookie"
@@ -82,10 +81,7 @@ function LoginForm() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-zinc-950 px-4">
-      <div className="bg-grid absolute inset-0 opacity-30" />
-      <BackgroundBeams className="opacity-30" />
-      <div className="absolute left-1/2 top-1/3 h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-500/10 blur-[96px]" />
+    <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4">
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="relative z-10 w-full max-w-sm">
         <div className="mb-6 text-center">

@@ -62,7 +62,7 @@ export function Sidebar() {
     <>
       <div className="flex h-14 items-center justify-between border-b border-zinc-800/50 px-4">
         <Link href="/dashboard">
-          <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-lg font-bold text-transparent">
+          <span className="text-lg font-bold text-white">
             LinkForge
           </span>
         </Link>
@@ -107,7 +107,7 @@ export function Sidebar() {
       {user && (
         <div className="border-t border-zinc-800/50 p-3">
           <div className="mb-2 flex items-center gap-3 rounded-lg px-3 py-2">
-            <div className="flex size-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-xs font-bold text-white">
+            <div className="flex size-8 items-center justify-center rounded-full bg-zinc-800 text-xs font-medium text-zinc-400">
               {user.email.charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
@@ -146,7 +146,7 @@ export function Sidebar() {
 
       <aside
         className={cn(
-          "flex h-screen w-60 flex-col border-r border-zinc-800/50 bg-zinc-950/95 backdrop-blur-xl fixed md:sticky top-0 left-0 z-40 transition-transform duration-200 md:translate-x-0",
+          "flex h-screen w-60 flex-col border-r border-zinc-800/50 bg-zinc-950 fixed md:sticky top-0 left-0 z-40 transition-transform duration-200 md:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full",
         )}
       >
